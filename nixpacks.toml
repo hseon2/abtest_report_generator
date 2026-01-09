@@ -15,9 +15,3 @@ cmds = ["npm run build"]
 [start]
 cmd = ". venv/bin/activate && npm start"
 
-[providers]
-python = "venv/bin/python"
-
-[staticAssets]
-"public" = "./public"
-
