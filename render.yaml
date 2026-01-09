@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ab-test-report-generator
+    env: node
+    buildCommand: |
+      npm ci
+      npm run build
+      python3 -m venv venv
+      . venv/bin/activate && pip install --upgrade pip setuptools wheel
+      . venv/bin/activate && pip install -r requirements.txt
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+
