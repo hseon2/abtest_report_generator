@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python310Full", "nodejs-18_x"]
+nixPkgs = ["python311Full", "nodejs-18_x"]
 
 [phases.install]
 cmds = [
