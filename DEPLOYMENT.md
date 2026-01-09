@@ -88,3 +88,7 @@ Variables 탭에서 `GEMINI_API_KEY`가 제대로 설정되어 있는지 확인
 
 이제 전 세계 어디서든 앱에 접속할 수 있습니다. 추가 질문이 있다면 [Railway 문서](https://docs.railway.app)를 참고하세요.
 
+
+
+
+

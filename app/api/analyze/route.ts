@@ -68,8 +68,18 @@ export async function POST(request: NextRequest) {
     await writeFile(configPath, JSON.stringify(configWithFiles, null, 2))
 
     try {
-      // Python 실행 명령 (Windows/Linux 호환)
-      const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+      // Python 실행 명령 (가상환경 우선, 없으면 기본 Python)
+      const venvPython = join(process.cwd(), 'venv', 'bin', 'python')
+      const fs = require('fs')
+      let pythonCmd: string
+      
+      // 가상환경의 Python이 존재하면 사용 (Railway 배포 환경)
+      if (fs.existsSync(venvPython)) {
+        pythonCmd = venvPython
+      } else {
+        // 로컬 개발 환경 (Windows/Linux 호환)
+        pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+      }
 
       // Python 분석 실행 (환경 변수 포함)
       const env = {
@@ -95,7 +105,6 @@ export async function POST(request: NextRequest) {
 
       // 결과 JSON 읽기
       const resultsPath = join(tmpDir, 'results.json')
-      const fs = require('fs')
       const results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
       
       // 결과가 비어있으면 경고
