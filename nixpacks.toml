@@ -13,5 +13,5 @@ cmds = [
 cmds = ["npm run build"]
 
 [start]
-cmd = ". venv/bin/activate && npm start"
+cmd = "npm start"
 
