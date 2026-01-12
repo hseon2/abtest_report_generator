@@ -14,8 +14,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY requirements.txt ./
 
-# Install Node.js dependencies
-RUN npm ci --only=production
+# Install Node.js dependencies (including devDependencies for build)
+RUN npm ci
 
 # Install Python dependencies
 RUN python3 -m venv /app/venv
