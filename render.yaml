@@ -1,15 +1,7 @@
 services:
   - type: web
     name: ab-test-report-generator
-    env: node
-    buildCommand: |
-      npm ci
-      npm run build
-      # Python 가상환경 생성 및 패키지 설치
-      python3 -m venv venv
-      ./venv/bin/pip install --upgrade pip setuptools wheel
-      ./venv/bin/pip install -r requirements.txt
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
