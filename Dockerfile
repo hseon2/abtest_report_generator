@@ -1,5 +1,5 @@
 # Multi-stage build for Next.js + Python
-FROM node:18-slim as node-base
+FROM node:18
 
 # Install Python and pip
 RUN apt-get update && apt-get install -y \
@@ -10,17 +10,18 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 COPY requirements.txt ./
 
 # Install Node.js dependencies
-RUN npm ci
+RUN npm ci --only=production
 
 # Install Python dependencies
-RUN python3 -m venv venv
-RUN ./venv/bin/pip install --upgrade pip setuptools wheel
-RUN ./venv/bin/pip install -r requirements.txt
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install -r requirements.txt
 
 # Copy application files
 COPY . .
@@ -28,7 +29,7 @@ COPY . .
 # Build Next.js
 RUN npm run build
 
-# Expose port
+# Expose port (Render will set PORT env var automatically)
 EXPOSE 3000
 
 # Start command
