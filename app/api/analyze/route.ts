@@ -131,10 +131,39 @@ export async function POST(request: NextRequest) {
 
       // Excel 파일 경로
       const excelPath = join(tmpDir, 'report.xlsx')
+      
+      // 파일 존재 여부 확인
+      try {
+        const fs = require('fs')
+        if (!fs.existsSync(excelPath)) {
+          console.error(`Excel file not created at: ${excelPath}`)
+          console.error(`Python stdout: ${excelStdout}`)
+        } else {
+          const stats = fs.statSync(excelPath)
+          console.log(`Excel file created successfully: ${excelPath}, size: ${stats.size} bytes`)
+        }
+      } catch (err) {
+        console.error('Error checking Excel file:', err)
+      }
+      
       const excelUrl = `/api/excel?t=${Date.now()}`
       
       // 파싱된 데이터 파일 경로
       const parsedDataPath = join(tmpDir, 'parsed_data.xlsx')
+      
+      // 파일 존재 여부 확인
+      try {
+        const fs = require('fs')
+        if (!fs.existsSync(parsedDataPath)) {
+          console.error(`Parsed data file not found at: ${parsedDataPath}`)
+        } else {
+          const stats = fs.statSync(parsedDataPath)
+          console.log(`Parsed data file exists: ${parsedDataPath}, size: ${stats.size} bytes`)
+        }
+      } catch (err) {
+        console.error('Error checking parsed data file:', err)
+      }
+      
       const parsedDataUrl = `/api/parsed-data?t=${Date.now()}`
 
       // 임시 파일 정리 (업로드 파일과 설정 파일만)
