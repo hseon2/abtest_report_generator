@@ -132,39 +132,43 @@ export async function POST(request: NextRequest) {
       // Excel 파일 경로
       const excelPath = join(tmpDir, 'report.xlsx')
       
-      // 파일 존재 여부 확인
+      // 파일 생성 확인 및 Base64 인코딩
+      let excelBase64: string | null = null
       try {
         const fs = require('fs')
-        if (!fs.existsSync(excelPath)) {
+        if (fs.existsSync(excelPath)) {
+          const excelBuffer = fs.readFileSync(excelPath)
+          excelBase64 = excelBuffer.toString('base64')
+          console.log(`Excel file read and encoded: ${excelPath}, size: ${excelBuffer.length} bytes`)
+        } else {
           console.error(`Excel file not created at: ${excelPath}`)
           console.error(`Python stdout: ${excelStdout}`)
-        } else {
-          const stats = fs.statSync(excelPath)
-          console.log(`Excel file created successfully: ${excelPath}, size: ${stats.size} bytes`)
         }
       } catch (err) {
-        console.error('Error checking Excel file:', err)
+        console.error('Error reading Excel file:', err)
       }
       
-      const excelUrl = `/api/excel?t=${Date.now()}`
+      const excelUrl = excelBase64 ? null : `/api/excel?t=${Date.now()}`
       
       // 파싱된 데이터 파일 경로
       const parsedDataPath = join(tmpDir, 'parsed_data.xlsx')
       
-      // 파일 존재 여부 확인
+      // 파일 생성 확인 및 Base64 인코딩
+      let parsedDataBase64: string | null = null
       try {
         const fs = require('fs')
-        if (!fs.existsSync(parsedDataPath)) {
-          console.error(`Parsed data file not found at: ${parsedDataPath}`)
+        if (fs.existsSync(parsedDataPath)) {
+          const parsedDataBuffer = fs.readFileSync(parsedDataPath)
+          parsedDataBase64 = parsedDataBuffer.toString('base64')
+          console.log(`Parsed data file read and encoded: ${parsedDataPath}, size: ${parsedDataBuffer.length} bytes`)
         } else {
-          const stats = fs.statSync(parsedDataPath)
-          console.log(`Parsed data file exists: ${parsedDataPath}, size: ${stats.size} bytes`)
+          console.error(`Parsed data file not found at: ${parsedDataPath}`)
         }
       } catch (err) {
-        console.error('Error checking parsed data file:', err)
+        console.error('Error reading parsed data file:', err)
       }
       
-      const parsedDataUrl = `/api/parsed-data?t=${Date.now()}`
+      const parsedDataUrl = parsedDataBase64 ? null : `/api/parsed-data?t=${Date.now()}`
 
       // 임시 파일 정리 (업로드 파일과 설정 파일만)
       try {
@@ -183,6 +187,8 @@ export async function POST(request: NextRequest) {
               results,
               excelUrl,
               parsedDataUrl,
+              excelBase64, // Base64 인코딩된 Excel 파일 (서버리스 환경 대응)
+              parsedDataBase64, // Base64 인코딩된 파싱된 데이터 (서버리스 환경 대응)
             })
     } catch (error: any) {
       // 임시 파일 정리

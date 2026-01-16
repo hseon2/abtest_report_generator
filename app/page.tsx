@@ -36,6 +36,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [excelUrl, setExcelUrl] = useState<string | null>(null)
   const [parsedDataUrl, setParsedDataUrl] = useState<string | null>(null)
+  const [excelBase64, setExcelBase64] = useState<string | null>(null)
+  const [parsedDataBase64, setParsedDataBase64] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<any[] | null>(null)
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([])
   const [availableMetrics, setAvailableMetrics] = useState<string[]>([])
@@ -492,6 +494,12 @@ export default function Home() {
       if (data.parsedDataUrl) {
         setParsedDataUrl(data.parsedDataUrl)
       }
+      if (data.excelBase64) {
+        setExcelBase64(data.excelBase64)
+      }
+      if (data.parsedDataBase64) {
+        setParsedDataBase64(data.parsedDataBase64)
+      }
     } catch (err: any) {
       setError(err.message || '분석 중 오류가 발생했습니다.')
     } finally {
@@ -500,13 +508,47 @@ export default function Home() {
   }
 
   const downloadExcel = () => {
-    if (excelUrl) {
+    if (excelBase64) {
+      // Base64 데이터를 Blob으로 변환하여 다운로드
+      const byteCharacters = atob(excelBase64)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'ab_test_report.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } else if (excelUrl) {
       window.open(excelUrl, '_blank')
     }
   }
 
   const downloadParsedData = () => {
-    if (parsedDataUrl) {
+    if (parsedDataBase64) {
+      // Base64 데이터를 Blob으로 변환하여 다운로드
+      const byteCharacters = atob(parsedDataBase64)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'parsed_data.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } else if (parsedDataUrl) {
       window.open(parsedDataUrl, '_blank')
     }
   }
@@ -1188,7 +1230,7 @@ export default function Home() {
               
               {/* 다운로드 버튼 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {excelUrl && (
+                {(excelUrl || excelBase64) && (
                   <button 
                     className="btn-secondary" 
                     onClick={downloadExcel}
@@ -1202,7 +1244,7 @@ export default function Home() {
                     Excel 리포트 다운로드
                   </button>
                 )}
-                {parsedDataUrl && (
+                {(parsedDataUrl || parsedDataBase64) && (
                   <button 
                     onClick={downloadParsedData}
                     style={{
