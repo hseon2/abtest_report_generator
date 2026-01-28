@@ -1800,7 +1800,9 @@ def main():
                     all_primary_results.extend(country_results['primary'])
             
             # 합쳐진 데이터를 Excel로 저장
-            tmp_dir = Path(__file__).parent.parent / 'tmp'
+            import os
+            cwd = os.getcwd()
+            tmp_dir = Path(cwd) / 'tmp'
             tmp_dir.mkdir(exist_ok=True)
             parsed_data_path = tmp_dir / 'parsed_data.xlsx'
             combined_data_df.to_excel(parsed_data_path, index=False, engine='openpyxl')
@@ -2108,8 +2110,10 @@ def save_results_and_insights(primary_results, config):
     # NaN 값을 None으로 변환
     output = clean_results_for_json(output)
     
-    # 결과 파일 저장
-    tmp_dir = Path(__file__).parent.parent / 'tmp'
+    # 결과 파일 저장 (현재 작업 디렉토리 사용)
+    import os
+    cwd = os.getcwd()
+    tmp_dir = Path(cwd) / 'tmp'
     tmp_dir.mkdir(exist_ok=True)
     results_path = tmp_dir / 'results.json'
     
