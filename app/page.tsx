@@ -671,11 +671,11 @@ export default function Home() {
         <div className="form-section">
           <h2>1. 파일 업로드</h2>
           <div className="form-group">
-            <label htmlFor="file">Excel 파일 (여러 개 선택 가능)</label>
+            <label htmlFor="file">Excel/CSV 파일 (여러 개 선택 가능)</label>
             <input
               type="file"
               id="file"
-              accept=".xlsx"
+              accept=".xlsx,.csv"
               multiple
               onChange={handleFileChange}
             />

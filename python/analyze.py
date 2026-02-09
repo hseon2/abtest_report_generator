@@ -60,7 +60,7 @@ def find_segments_row(df):
 
 def parse_excel(file_path):
     """
-    Excel 파일 파싱
+    Excel 또는 CSV 파일 파싱
     실제 구조:
     - A열: 세그먼트 이름 (메트릭 이름)
     - B열: All Visits - Control
@@ -70,7 +70,24 @@ def parse_excel(file_path):
     - F열: 세그먼트 2 - Control
     - G열: 세그먼트 2 - Variation
     """
-    df = pd.read_excel(file_path, header=None)
+    file_path_obj = Path(file_path)
+    file_ext = file_path_obj.suffix.lower()
+    
+    # 파일 확장자에 따라 읽기
+    if file_ext == '.csv':
+        # CSV 파일 읽기 (인코딩 자동 감지 시도)
+        try:
+            df = pd.read_csv(file_path, header=None, encoding='utf-8')
+        except UnicodeDecodeError:
+            # UTF-8 실패 시 다른 인코딩 시도
+            try:
+                df = pd.read_csv(file_path, header=None, encoding='cp949')
+            except:
+                df = pd.read_csv(file_path, header=None, encoding='latin-1')
+    elif file_ext in ['.xlsx', '.xls']:
+        df = pd.read_excel(file_path, header=None)
+    else:
+        raise ValueError(f"지원하지 않는 파일 형식입니다: {file_ext}. .xlsx, .xls, .csv만 지원합니다.")
     
     # Segments 행 찾기 (첫 번째 컬럼에 "Segments"가 포함된 행)
     segments_row = None
@@ -80,7 +97,7 @@ def parse_excel(file_path):
             break
     
     if segments_row is None:
-        raise ValueError("'Segments' 행을 찾을 수 없습니다. Excel 파일 형식을 확인해주세요.")
+        raise ValueError("'Segments' 행을 찾을 수 없습니다. 파일 형식을 확인해주세요.")
     
     # Segments 행의 헤더 읽기
     segments_header_row = df.iloc[segments_row]
