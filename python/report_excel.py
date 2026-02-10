@@ -103,13 +103,29 @@ def create_excel_report(results_path):
             for country in sorted_countries:
                 country_results = country_groups[country]
                 
-                # 국가 제목
+                # 국가 제목 (CA, CA_FR, UK 등 국가 블록 헤더를 더 강조)
                 ws.merge_cells(f'A{row}:K{row}')
                 cell = ws[f'A{row}']
-                cell.value = f"  {country}"
-                cell.font = Font(bold=True, size=13)
-                cell.fill = PatternFill(start_color="95A5A6", end_color="95A5A6", fill_type="solid")
+                cell.value = f"  {country}"  # 살짝 들여쓰기
                 cell.font = Font(bold=True, color="FFFFFF", size=12)
+                cell.fill = PatternFill(start_color="4F4F4F", end_color="4F4F4F", fill_type="solid")
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+                # 국가 블록 전체에 굵은 상/하단 테두리 적용
+                thick_side = Side(style="medium")
+                thin_side = Side(style="thin")
+                country_border = Border(
+                    left=thin_side,
+                    right=thin_side,
+                    top=thick_side,
+                    bottom=thick_side,
+                )
+                for col_idx in range(1, 12):  # A~K
+                    ws.cell(row=row, column=col_idx).border = country_border
+
+                # 국가 헤더 행 높이 약간 키우기
+                ws.row_dimensions[row].height = 20
+
                 row += 1
                 
                 # KPI별로 그룹화
@@ -153,7 +169,7 @@ def create_excel_report(results_path):
                     if has_non_variation_only:
                         headers.append('Verdict')
                     
-                    # KPI 제목 (merge 범위 조정)
+                    # KPI 제목 (merge 범위 조정, 국가 블록 안에서 서브 헤더 역할)
                     max_col = len(headers)
                     col_letter = get_column_letter(max_col)
                     ws.merge_cells(f'A{row}:{col_letter}{row}')
@@ -161,6 +177,8 @@ def create_excel_report(results_path):
                     cell.value = f"    {kpi_name}"
                     cell.font = Font(bold=True, size=12)
                     cell.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    ws.row_dimensions[row].height = 18
                     row += 1
                     
                     # 헤더
@@ -182,7 +200,10 @@ def create_excel_report(results_path):
                                                            not result_is_variation_only)
                         
                         col = 1
-                        ws.cell(row=row, column=col, value=r.get('country', ''))
+                        # 국가 코드 셀(CA, CA_FR, UK 등)을 굵게/가운데 정렬
+                        country_cell = ws.cell(row=row, column=col, value=r.get('country', ''))
+                        country_cell.font = Font(bold=True)
+                        country_cell.alignment = center_align
                         col += 1
                         ws.cell(row=row, column=col, value=r.get('device', ''))
                         col += 1

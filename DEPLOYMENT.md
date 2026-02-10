@@ -92,3 +92,10 @@ Variables 탭에서 `GEMINI_API_KEY`가 제대로 설정되어 있는지 확인
 
 
 
+
+
+
+
+
+
+

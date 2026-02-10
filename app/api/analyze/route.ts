@@ -38,13 +38,13 @@ export async function POST(request: NextRequest) {
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
-      const bytes = await file.arrayBuffer()
-      const buffer = Buffer.from(bytes)
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
       // 원본 파일 확장자 유지
       const originalName = file.name
       const fileExt = originalName.substring(originalName.lastIndexOf('.')) || '.xlsx'
       const filePath = join(tmpDir, `upload_${timestamp}_${i}${fileExt}`)
-      await writeFile(filePath, buffer)
+    await writeFile(filePath, buffer)
       filePaths.push(filePath)
     }
 
