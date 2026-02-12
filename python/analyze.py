@@ -85,7 +85,7 @@ def parse_excel(file_path):
             except:
                 df = pd.read_csv(file_path, header=None, encoding='latin-1')
     elif file_ext in ['.xlsx', '.xls']:
-    df = pd.read_excel(file_path, header=None)
+        df = pd.read_excel(file_path, header=None)
     else:
         raise ValueError(f"지원하지 않는 파일 형식입니다: {file_ext}. .xlsx, .xls, .csv만 지원합니다.")
     
