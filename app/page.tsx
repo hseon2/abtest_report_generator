@@ -2,27 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-
-interface KPIConfig {
-  name: string
-  numerator: string
-  denominator: string
-  type: 'rate' | 'revenue' | 'rpv' | 'simple' | 'variation_only' | string
-}
-
-interface Config {
-  kpis: KPIConfig[]
-}
-
-interface FileMetadata {
-  id: string
-  file: File
-  country: string
-  reportOrder: '1st report' | '2nd report' | '3rd report' | 'final report'
-  previewData?: any[] | null
-  previewHeaders?: string[]
-  isConfirmed?: boolean // 저장 버튼으로 확정되었는지 여부
-}
+import { KPIConfig, Config, FileMetadata } from './types'
 
 export default function Home() {
   const [files, setFiles] = useState<FileMetadata[]>([]) // 확정된 파일 목록
