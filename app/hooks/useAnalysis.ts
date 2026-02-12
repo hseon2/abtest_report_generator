@@ -10,6 +10,9 @@ export function useAnalysis() {
   const [parsedDataUrl, setParsedDataUrl] = useState<string | null>(null)
   const [excelBase64, setExcelBase64] = useState<string | null>(null)
   const [parsedDataBase64, setParsedDataBase64] = useState<string | null>(null)
+  const [rawDataInfo, setRawDataInfo] = useState<string[] | null>(null)
+  const [rawDataExpanded, setRawDataExpanded] = useState<boolean>(false)
+  const [selectedReportOrder, setSelectedReportOrder] = useState<string | null>(null)
 
   const handleAnalyze = async (
     confirmedFiles: any[],
@@ -107,6 +110,9 @@ export function useAnalysis() {
       if (data.parsedDataUrl) {
         setParsedDataUrl(data.parsedDataUrl)
       }
+      if (data.rawDataInfo) {
+        setRawDataInfo(data.rawDataInfo)
+      }
     } catch (err: any) {
       console.error('분석 중 오류:', err)
       setError(err.message || '분석 중 오류가 발생했습니다.')
@@ -124,7 +130,12 @@ export function useAnalysis() {
     parsedDataUrl,
     excelBase64,
     parsedDataBase64,
+    rawDataInfo,
+    rawDataExpanded,
+    selectedReportOrder,
     handleAnalyze,
+    setRawDataExpanded,
+    setSelectedReportOrder,
   }
 }
 

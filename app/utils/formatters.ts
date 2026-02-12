@@ -1,10 +1,9 @@
-/**
- * KPI별로 결과 그룹화
- */
-export function groupByKPI(results: any[]): { [kpiName: string]: any[] } {
-  const groups: { [kpiName: string]: any[] } = {}
+import { REPORT_ORDER_SORT } from '../constants'
+
+export function groupByKPI(results: any[]): { [key: string]: any[] } {
+  const groups: { [key: string]: any[] } = {}
   results.forEach((r: any) => {
-    const kpiName = r.kpiName || 'Unknown KPI'
+    const kpiName = r.kpiName || 'Unknown'
     if (!groups[kpiName]) {
       groups[kpiName] = []
     }
@@ -13,13 +12,10 @@ export function groupByKPI(results: any[]): { [kpiName: string]: any[] } {
   return groups
 }
 
-/**
- * 리포트 순서별로 결과 그룹화
- */
-export function groupByReportOrder(results: any[]): { [reportOrder: string]: any[] } {
-  const groups: { [reportOrder: string]: any[] } = {}
+export function groupByReportOrder(results: any[]): { [key: string]: any[] } {
+  const groups: { [key: string]: any[] } = {}
   results.forEach((r: any) => {
-    const reportOrder = r.reportOrder || '1st report'
+    const reportOrder = r.reportOrder || 'Unknown'
     if (!groups[reportOrder]) {
       groups[reportOrder] = []
     }
@@ -28,11 +24,8 @@ export function groupByReportOrder(results: any[]): { [reportOrder: string]: any
   return groups
 }
 
-/**
- * 국가별로 결과 그룹화
- */
-export function groupByCountry(results: any[]): { [country: string]: any[] } {
-  const groups: { [country: string]: any[] } = {}
+export function groupByCountry(results: any[]): { [key: string]: any[] } {
+  const groups: { [key: string]: any[] } = {}
   results.forEach((r: any) => {
     const country = r.country || 'Unknown'
     if (!groups[country]) {
@@ -43,16 +36,6 @@ export function groupByCountry(results: any[]): { [country: string]: any[] } {
   return groups
 }
 
-/**
- * 리포트 순서에 따른 정렬 숫자 반환
- */
 export function getReportOrderSort(reportOrder: string): number {
-  const sortMap: { [key: string]: number } = {
-    '1st report': 1,
-    '2nd report': 2,
-    '3rd report': 3,
-    'final report': 4,
-  }
-  return sortMap[reportOrder] || 999
+  return REPORT_ORDER_SORT[reportOrder] || 999
 }
-
