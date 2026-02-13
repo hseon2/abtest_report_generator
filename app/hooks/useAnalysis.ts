@@ -36,7 +36,17 @@ export function useAnalysis() {
     try {
       const primaryKPIs: KPIConfig[] = []
 
-      config.kpis.forEach((kpi) => {
+      console.log('=== KPI 디버깅 ===')
+      console.log('전달받은 config.kpis:', config.kpis)
+      console.log('KPI 개수:', config.kpis.length)
+
+      config.kpis.forEach((kpi, index) => {
+        console.log(`KPI ${index + 1}:`, kpi)
+        console.log(`  - name: "${kpi.name}"`)
+        console.log(`  - numerator: "${kpi.numerator}"`)
+        console.log(`  - denominator: "${kpi.denominator}"`)
+        console.log(`  - type: "${kpi.type}"`)
+        
         if (kpi.name || kpi.numerator) {
           if (kpi.type === 'revenue') {
             primaryKPIs.push(kpi)
@@ -50,8 +60,13 @@ export function useAnalysis() {
           } else {
             primaryKPIs.push(kpi)
           }
+        } else {
+          console.log(`  ⚠️ KPI ${index + 1} 제외됨: name과 numerator가 모두 비어있음`)
         }
       })
+
+      console.log('필터링 후 primaryKPIs:', primaryKPIs)
+      console.log('primaryKPIs 개수:', primaryKPIs.length)
 
       const formData = new FormData()
       

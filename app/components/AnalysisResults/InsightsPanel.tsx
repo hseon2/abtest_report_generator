@@ -168,3 +168,4 @@ export function InsightsPanel({ insights, useAI }: InsightsPanelProps) {
   )
 }
 
+

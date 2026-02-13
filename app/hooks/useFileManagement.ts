@@ -160,7 +160,15 @@ export function useFileManagement() {
         const dataAsArray = selectedFile.previewData.map((row: any) => 
           selectedFile.previewHeaders!.map((header) => row[header])
         )
+        
+        console.log('=== 메트릭 추출 디버깅 ===')
+        console.log('previewData 행 수:', selectedFile.previewData.length)
+        console.log('첫 3개 행 (A 컬럼만):', dataAsArray.slice(0, 3).map(row => row[0]))
+        
         const metrics = extractMetrics(dataAsArray)
+        console.log('추출된 메트릭 개수:', metrics.length)
+        console.log('추출된 메트릭 목록:', metrics)
+        
         setAvailableMetrics(metrics)
       }
     }

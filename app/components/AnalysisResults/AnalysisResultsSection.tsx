@@ -1,8 +1,6 @@
 'use client'
 
 import React from 'react'
-import { DownloadButtons } from './DownloadButtons'
-import { InsightsPanel } from './InsightsPanel'
 import { AnalysisResultsTable } from './AnalysisResultsTable'
 
 interface AnalysisResultsSectionProps {
@@ -29,6 +27,11 @@ export function AnalysisResultsSection({
   // 모든 결과를 플랫하게 가져오기
   const getAllResults = () => {
     if (!results) return []
+    // Python에서 반환하는 primaryResults 사용
+    if (results.primaryResults && Array.isArray(results.primaryResults)) {
+      return results.primaryResults
+    }
+    // 레거시: results.results도 지원
     if (results.results && Array.isArray(results.results)) {
       return results.results
     }
@@ -50,20 +53,7 @@ export function AnalysisResultsSection({
         </div>
       )}
       
-      {/* 다운로드 버튼 */}
-      <DownloadButtons
-        excelBase64={excelBase64}
-        excelUrl={excelUrl}
-        parsedDataBase64={parsedDataBase64}
-        parsedDataUrl={parsedDataUrl}
-      />
-      
-      {/* 인사이트 패널 */}
-      {results.insights && (
-        <InsightsPanel insights={results.insights} useAI={results.useAI} />
-      )}
-      
-      {/* 결과 테이블 */}
+      {/* 결과 테이블만 표시 (다운로드 버튼과 인사이트는 사이드바에 있음) */}
       <AnalysisResultsTable
         results={allResults}
         variationCount={variationCount}
@@ -73,4 +63,5 @@ export function AnalysisResultsSection({
     </div>
   )
 }
+
 

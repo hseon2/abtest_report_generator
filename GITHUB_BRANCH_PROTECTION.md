@@ -230,3 +230,4 @@ git push origin test/branch-protection
 
 **마지막 업데이트:** 2026-01-12
 
+

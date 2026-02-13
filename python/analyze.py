@@ -485,38 +485,38 @@ def detect_segments(segment_names, variation_count=1):
             segments.append((segment_name_bc, 'B', 'C'))
             used_cols.add('B')
             used_cols.add('C')
-        print(f"DEBUG detect_segments: 첫 번째 세그먼트 추가 - {segment_name_bc} (B-C)")
-    
-    # 나머지는 Control/Variation 쌍으로 처리 (D-E, F-G, H-I, ...)
-    # D부터 시작하여 Control/Variation 쌍 검색
-    for i in range(3, len(all_cols) - 1, 2):  # D=3부터 시작, 2씩 증가 (D-E, F-G, H-I, ...)
-        control_col = all_cols[i]
-        variation_col = all_cols[i + 1]
+            print(f"DEBUG detect_segments: 첫 번째 세그먼트 추가 - {segment_name_bc} (B-C)")
         
-        # segment_names에 해당 컬럼이 있는지 확인
-        if control_col in segment_names or variation_col in segment_names:
-            # 세그먼트 이름 추출 (Control 또는 Variation 중 하나라도 있으면 사용)
-            segment_name = None
-            if control_col in segment_names:
-                segment_name = str(segment_names[control_col]).strip()
-            elif variation_col in segment_names:
-                segment_name = str(segment_names[variation_col]).strip()
+        # 나머지는 Control/Variation 쌍으로 처리 (D-E, F-G, H-I, ...)
+        # D부터 시작하여 Control/Variation 쌍 검색
+        for i in range(3, len(all_cols) - 1, 2):  # D=3부터 시작, 2씩 증가 (D-E, F-G, H-I, ...)
+            control_col = all_cols[i]
+            variation_col = all_cols[i + 1]
             
-            if segment_name and segment_name.lower() not in ['nan', 'none', '']:
-                segments.append((segment_name, control_col, variation_col))
-                used_cols.add(control_col)
-                used_cols.add(variation_col)
-                print(f"DEBUG detect_segments: 세그먼트 추가 - {segment_name} ({control_col}-{variation_col})")
-    
-    # 매칭되지 않은 경우 기본값 사용
-    if not segments:
-        print("경고: 세그먼트를 자동 감지하지 못했습니다. 기본 구조를 사용합니다.")
-        segment_name_bc = segment_names.get('B', 'All') if segment_names else 'All'
-        segments.append((segment_name_bc, 'B', 'C'))
-        if 'D' in segment_names and 'E' in segment_names:
-            segments.append(('세그먼트 1', 'D', 'E'))
-        if 'F' in segment_names and 'G' in segment_names:
-            segments.append(('세그먼트 2', 'F', 'G'))
+            # segment_names에 해당 컬럼이 있는지 확인
+            if control_col in segment_names or variation_col in segment_names:
+                # 세그먼트 이름 추출 (Control 또는 Variation 중 하나라도 있으면 사용)
+                segment_name = None
+                if control_col in segment_names:
+                    segment_name = str(segment_names[control_col]).strip()
+                elif variation_col in segment_names:
+                    segment_name = str(segment_names[variation_col]).strip()
+                
+                if segment_name and segment_name.lower() not in ['nan', 'none', '']:
+                    segments.append((segment_name, control_col, variation_col))
+                    used_cols.add(control_col)
+                    used_cols.add(variation_col)
+                    print(f"DEBUG detect_segments: 세그먼트 추가 - {segment_name} ({control_col}-{variation_col})")
+        
+        # 매칭되지 않은 경우 기본값 사용
+        if not segments:
+            print("경고: 세그먼트를 자동 감지하지 못했습니다. 기본 구조를 사용합니다.")
+            segment_name_bc = segment_names.get('B', 'All') if segment_names else 'All'
+            segments.append((segment_name_bc, 'B', 'C'))
+            if 'D' in segment_names and 'E' in segment_names:
+                segments.append(('세그먼트 1', 'D', 'E'))
+            if 'F' in segment_names and 'G' in segment_names:
+                segments.append(('세그먼트 2', 'F', 'G'))
     
     print(f"DEBUG detect_segments: 총 {len(segments)}개 세그먼트 감지됨")
     return segments
@@ -1044,50 +1044,50 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 else:
                     den_c = None
                     den_v = None
-                
+            
                 if num_c is None or num_v is None:
                     if debug:
                         print(f"DEBUG: KPI 계산 실패 - {kpi_config['name']}, segment: {segment_name}")
                         print(f"  num_c: {num_c}, num_v: {num_v}, den_c: {den_c}, den_v: {den_v}")
-                    # 메트릭을 찾지 못한 경우 정보 저장
-                    if num_c is None:
-                        missing_metrics.append({
-                            'metric': kpi_config['numerator'],
-                            'segment': display_segment_name,
-                            'country': country,
-                            'reportOrder': report_order
-                        })
-                    if num_v is None:
-                        missing_metrics.append({
-                            'metric': kpi_config['numerator'],
-                            'segment': display_segment_name,
-                            'country': country,
-                            'reportOrder': report_order
-                        })
-                    # denominator가 있는 경우에만 missing 체크
-                    if den_label and den_label.strip():
-                        if den_c is None:
+                        # 메트릭을 찾지 못한 경우 정보 저장
+                        if num_c is None:
                             missing_metrics.append({
-                                'metric': kpi_config['denominator'],
+                                'metric': kpi_config['numerator'],
                                 'segment': display_segment_name,
                                 'country': country,
                                 'reportOrder': report_order
                             })
-                        if den_v is None:
+                        if num_v is None:
                             missing_metrics.append({
-                                'metric': kpi_config['denominator'],
+                                'metric': kpi_config['numerator'],
                                 'segment': display_segment_name,
                                 'country': country,
                                 'reportOrder': report_order
                             })
+                        # denominator가 있는 경우에만 missing 체크
+                        if den_label and den_label.strip():
+                            if den_c is None:
+                                missing_metrics.append({
+                                    'metric': kpi_config['denominator'],
+                                    'segment': display_segment_name,
+                                    'country': country,
+                                    'reportOrder': report_order
+                                })
+                            if den_v is None:
+                                missing_metrics.append({
+                                    'metric': kpi_config['denominator'],
+                                    'segment': display_segment_name,
+                                    'country': country,
+                                    'reportOrder': report_order
+                                })
                     continue
-                
-                # 디버그: 실제 값 출력
-                if debug:
-                    print(f"DEBUG: KPI 계산 - {kpi_config['name']}, segment: {segment_name}")
-                    print(f"  numerator: {kpi_config['numerator']}, denominator: {kpi_config.get('denominator', '')}")
-                    print(f"  num_c: {num_c}, num_v: {num_v}, den_c: {den_c}, den_v: {den_v}")
-                
+            
+            # 디버그: 실제 값 출력
+            if debug:
+                print(f"DEBUG: KPI 계산 - {kpi_config['name']}, segment: {segment_name}")
+                print(f"  numerator: {kpi_config['numerator']}, denominator: {kpi_config.get('denominator', '')}")
+                print(f"  num_c: {num_c}, num_v: {num_v}, den_c: {den_c}, den_v: {den_v}")
+            
                 # denominator가 있으면 rate 계산, 없으면 값만 사용
                 if den_c is not None and den_v is not None and den_c > 0 and den_v > 0:
                     rate_c = num_c / den_c
@@ -1165,7 +1165,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'denominatorSizeControl': 0,
                     'denominatorSizeVariation': den_v if den_v is not None else 0,
                 })
-                
+            
             elif kpi_config['type'] == 'revenue':
                 # Revenue: numerator 값 사용
                 metric_label = kpi_config.get('numerator', 'Revenue')
@@ -1175,14 +1175,14 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 if rev_c is None or rev_v is None:
                     if debug:
                         print(f"DEBUG: Revenue KPI 계산 실패 - {kpi_config['name']}, segment: {segment_name}")
-                    # 메트릭을 찾지 못한 경우 정보 저장
-                    if rev_c is None or rev_v is None:
-                        missing_metrics.append({
-                            'metric': metric_label,
-                            'segment': display_segment_name,
-                            'country': country,
-                            'reportOrder': report_order
-                        })
+                        # 메트릭을 찾지 못한 경우 정보 저장
+                        if rev_c is None or rev_v is None:
+                            missing_metrics.append({
+                                'metric': metric_label,
+                                'segment': display_segment_name,
+                                'country': country,
+                                'reportOrder': report_order
+                            })
                     continue
                 
                 uplift = ((rev_v - rev_c) / rev_c * 100) if rev_c > 0 else 0
@@ -1211,7 +1211,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'denominatorSizeControl': rev_c,
                     'denominatorSizeVariation': rev_v,
                 })
-                
+            
             elif kpi_config['type'] == 'rpv':
                 # RPV: Revenue / Visits
                 rev_c = find_metric_value(data_df, 'Revenue', None, control_col, debug)
@@ -1222,21 +1222,21 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 if rev_c is None or rev_v is None or visits_c is None or visits_v is None:
                     if debug:
                         print(f"DEBUG: RPV KPI 계산 실패 - {kpi_config['name']}, segment: {segment_name}")
-                    # 메트릭을 찾지 못한 경우 정보 저장
-                    if rev_c is None or rev_v is None:
-                        missing_metrics.append({
-                            'metric': 'Revenue',
-                            'segment': display_segment_name,
-                            'country': country,
-                            'reportOrder': report_order
-                        })
-                    if visits_c is None or visits_v is None:
-                        missing_metrics.append({
-                            'metric': 'Visits',
-                            'segment': display_segment_name,
-                            'country': country,
-                            'reportOrder': report_order
-                        })
+                        # 메트릭을 찾지 못한 경우 정보 저장
+                        if rev_c is None or rev_v is None:
+                            missing_metrics.append({
+                                'metric': 'Revenue',
+                                'segment': display_segment_name,
+                                'country': country,
+                                'reportOrder': report_order
+                            })
+                        if visits_c is None or visits_v is None:
+                            missing_metrics.append({
+                                'metric': 'Visits',
+                                'segment': display_segment_name,
+                                'country': country,
+                                'reportOrder': report_order
+                            })
                     continue
                 
                 rpv_c = rev_c / visits_c if visits_c > 0 else 0
@@ -1459,18 +1459,18 @@ def generate_insights(primary_results, use_ai=False):
             # verdict가 None이면 건너뛰기
             if verdict is None:
                 continue
-            if 'Variation 우세 (유보)' in verdict:
-                primary_wins += 1
-                primary_reserved += 1
-            elif 'Variation 우세' in verdict:
-                primary_wins += 1
-            elif 'Control 우세 (유보)' in verdict:
-                primary_losses += 1
-                primary_reserved += 1
-            elif 'Control 우세' in verdict:
-                primary_losses += 1
-            elif verdict == '차이 없음' or verdict == '차이없음':
-                primary_no_diff += 1
+        if 'Variation 우세 (유보)' in verdict:
+            primary_wins += 1
+            primary_reserved += 1
+        elif 'Variation 우세' in verdict:
+            primary_wins += 1
+        elif 'Control 우세 (유보)' in verdict:
+            primary_losses += 1
+            primary_reserved += 1
+        elif 'Control 우세' in verdict:
+            primary_losses += 1
+        elif verdict == '차이 없음' or verdict == '차이없음':
+            primary_no_diff += 1
     
     # Revenue 별도 분석
     revenue_results = [r for r in primary_results if 'Revenue' in r['kpiName'] or r['kpiName'] == 'Revenue']
@@ -1595,6 +1595,25 @@ def main():
     # 설정 로드
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
+    
+    # === 디버깅: Config 로드 직후 ===
+    print(f"\n=== Python: Config 파일 로드 완료 ===")
+    print(f"config.json 파일 경로: {config_path}")
+    print(f"config 키 목록: {list(config.keys())}")
+    print(f"config.get('kpis') 존재 여부: {'kpis' in config}")
+    print(f"config.get('primaryKPIs') 존재 여부: {'primaryKPIs' in config}")
+    if 'kpis' in config:
+        print(f"config['kpis'] 개수: {len(config['kpis'])}")
+        print(f"config['kpis'] 내용: {config['kpis']}")
+    if 'primaryKPIs' in config:
+        print(f"config['primaryKPIs'] 개수: {len(config['primaryKPIs'])}")
+        print(f"config['primaryKPIs'] 내용: {config['primaryKPIs']}")
+    
+    # 프론트엔드에서 'kpis'로 전달되면 'primaryKPIs'로 매핑
+    if 'kpis' in config and 'primaryKPIs' not in config:
+        print(f"[매핑] config['kpis']를 config['primaryKPIs']로 복사합니다.")
+        config['primaryKPIs'] = config['kpis']
+        print(f"[매핑 후] config['primaryKPIs'] 개수: {len(config['primaryKPIs'])}")
     
     # 여러 파일 처리 여부 확인
     files_config = config.get('files', [])
@@ -2001,21 +2020,46 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
         # 전체 데이터를 사용 (컬럼 매핑만 다르게 적용)
         country_data_df = data_df.copy()
     
-    # Primary KPI 계산
-        print(f"Primary KPI 개수: {len(config.get('primaryKPIs', []))}")
-        for kpi_config in config.get('primaryKPIs', []):
+        # Primary KPI 계산
+        print(f"\n=== Primary KPI 계산 시작 (여러 국가) ===")
+        print(f"config 키 목록: {list(config.keys())}")
+        print(f"config.get('primaryKPIs') 개수: {len(config.get('primaryKPIs', []))}")
+        print(f"config.get('primaryKPIs') 내용: {config.get('primaryKPIs', [])}")
+        
+        primary_kpis = config.get('primaryKPIs', [])
+        if not primary_kpis:
+            print(f"[경고] primaryKPIs가 비어있습니다!")
+            print(f"[경고] config에 'kpis' 키가 있는지 확인: {'kpis' in config}")
+            if 'kpis' in config:
+                print(f"[경고] config['kpis']가 존재하지만 primaryKPIs로 복사되지 않았습니다!")
+                print(f"[경고] config['kpis'] 내용: {config['kpis']}")
+        
+        print(f"Primary KPI 개수: {len(primary_kpis)}")
+        for kpi_config in primary_kpis:
             print(f"  처리 중: {kpi_config.get('name')}, type: {kpi_config.get('type')}, numerator: {kpi_config.get('numerator')}, denominator: {kpi_config.get('denominator')}")
+            
+            # === 필터링 디버깅 ===
+            print(f"  [필터링 체크] KPI 전체 내용: {kpi_config}")
+            print(f"  [필터링 체크] name 존재: {bool(kpi_config.get('name'))}")
+            print(f"  [필터링 체크] numerator 존재: {bool(kpi_config.get('numerator'))}")
             
             # 모든 KPI를 처리하되, name 또는 numerator가 있으면 처리
             has_required_fields = False
             if kpi_config.get('name') or kpi_config.get('numerator'):
+                print(f"  [필터링 체크] name 또는 numerator가 있음 -> 처리 대상")
                 kpi_type = kpi_config.get('type', 'rate')
                 # revenue, variation_only, simple 타입은 denominator 불필요
                 if kpi_type == 'revenue' or kpi_type == 'variation_only' or kpi_type == 'simple':
                     has_required_fields = True
+                    print(f"  [필터링 체크] type이 {kpi_type} -> has_required_fields = True")
                 # 다른 타입도 denominator 없어도 처리 (선택사항)
                 else:
                     has_required_fields = True
+                    print(f"  [필터링 체크] type이 {kpi_type} -> has_required_fields = True")
+            else:
+                print(f"  [필터링 체크] name과 numerator 모두 없음 -> 건너뜀")
+            
+            print(f"  [필터링 결과] has_required_fields = {has_required_fields}")
             
             if has_required_fields:
                 results, missing_metrics = compute_kpi(country_data_df, kpi_config, selected_country, country_segment_mapping, variation_count, debug=True, report_order=report_order)
@@ -2047,25 +2091,48 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
     else:
         # 단일 국가 처리 (기존 로직)
         primary_results = []
-        print(f"Primary KPI 개수: {len(config.get('primaryKPIs', []))}")
-        for kpi_config in config.get('primaryKPIs', []):
+        print(f"\n=== Primary KPI 계산 시작 (단일 국가) ===")
+        print(f"config 키 목록: {list(config.keys())}")
+        print(f"config.get('primaryKPIs') 개수: {len(config.get('primaryKPIs', []))}")
+        print(f"config.get('primaryKPIs') 내용: {config.get('primaryKPIs', [])}")
+        
+        primary_kpis = config.get('primaryKPIs', [])
+        if not primary_kpis:
+            print(f"[경고] primaryKPIs가 비어있습니다!")
+            print(f"[경고] config에 'kpis' 키가 있는지 확인: {'kpis' in config}")
+            if 'kpis' in config:
+                print(f"[경고] config['kpis']가 존재하지만 primaryKPIs로 복사되지 않았습니다!")
+                print(f"[경고] config['kpis'] 내용: {config['kpis']}")
+        
+        print(f"Primary KPI 개수: {len(primary_kpis)}")
+        for kpi_config in primary_kpis:
             print(f"  처리 중: {kpi_config.get('name')}, type: {kpi_config.get('type')}, numerator: {kpi_config.get('numerator')}, denominator: {kpi_config.get('denominator')}")
+            
+            # === 필터링 디버깅 ===
+            print(f"  [필터링 체크] KPI 전체 내용: {kpi_config}")
+            print(f"  [필터링 체크] name 존재: {bool(kpi_config.get('name'))}")
+            print(f"  [필터링 체크] numerator 존재: {bool(kpi_config.get('numerator'))}")
             
             # 모든 KPI를 처리하되, name 또는 numerator가 있으면 처리
             has_required_fields = False
             if kpi_config.get('name') or kpi_config.get('numerator'):
+                print(f"  [필터링 체크] name 또는 numerator가 있음 -> 처리 대상")
                 kpi_type = kpi_config.get('type', 'rate')
                 # revenue, variation_only, simple 타입은 denominator 불필요
                 if kpi_type == 'revenue' or kpi_type == 'variation_only' or kpi_type == 'simple':
                     has_required_fields = True
-                    print(f"    {kpi_type} 타입: denominator 불필요")
+                    print(f"  [필터링 체크] type이 {kpi_type} -> has_required_fields = True, denominator 불필요")
                 # 다른 타입도 denominator 없어도 처리 (선택사항)
                 else:
                     has_required_fields = True
                     if kpi_config.get('denominator'):
-                        print(f"    denominator 있음")
+                        print(f"  [필터링 체크] type이 {kpi_type} -> has_required_fields = True, denominator 있음")
                     else:
-                        print(f"    denominator 없음 (선택사항)")
+                        print(f"  [필터링 체크] type이 {kpi_type} -> has_required_fields = True, denominator 없음 (선택사항)")
+            else:
+                print(f"  [필터링 체크] name과 numerator 모두 없음 -> 건너뜀")
+            
+            print(f"  [필터링 결과] has_required_fields = {has_required_fields}")
             
             if has_required_fields:
                 # 사용자가 선택한 국가 사용

@@ -33,9 +33,7 @@ export function KPISetupSection({
   onAnalyze,
 }: KPISetupSectionProps) {
   return (
-    <div className="form-section">
-      <h2>3. KPI 설정</h2>
-      
+    <>
       {pendingFilesCount > 0 && (
         <div style={{
           padding: '12px',
@@ -219,7 +217,8 @@ export function KPISetupSection({
           {loading ? '분석 중...' : '분석 시작'}
         </button>
       </div>
-    </div>
+    </>
   )
 }
+
 

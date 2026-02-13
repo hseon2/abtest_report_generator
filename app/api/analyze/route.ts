@@ -24,6 +24,14 @@ export async function POST(request: NextRequest) {
     const config = JSON.parse(configStr)
     const fileMetadata = fileMetadataStr ? JSON.parse(fileMetadataStr) : []
 
+    // 디버깅: 받은 config 확인
+    console.log('=== API Route: 받은 Config ===')
+    console.log('config.kpis:', JSON.stringify(config.kpis, null, 2))
+    console.log('config.kpis 개수:', config.kpis ? config.kpis.length : 0)
+    console.log('config.variationCount:', config.variationCount)
+    console.log('config.segments:', config.segments)
+    console.log('config.useAI:', config.useAI)
+
     // 임시 디렉토리 생성
     const tmpDir = join(process.cwd(), 'tmp')
     try {
@@ -68,7 +76,18 @@ export async function POST(request: NextRequest) {
     console.log(`파일 메타데이터:`, fileMetadata)
     console.log(`설정 파일에 포함된 파일 정보:`, configWithFiles.files)
     
+    // 디버깅: Python으로 전달되는 config 확인
+    console.log('=== Python으로 전달될 Config ===')
+    console.log('configWithFiles.kpis:', JSON.stringify(configWithFiles.kpis, null, 2))
+    console.log('configWithFiles.kpis 개수:', configWithFiles.kpis ? configWithFiles.kpis.length : 0)
+    
     await writeFile(configPath, JSON.stringify(configWithFiles, null, 2))
+    
+    // 디버깅: 실제로 저장된 config 파일 읽어서 확인
+    const savedConfig = JSON.parse(await require('fs/promises').readFile(configPath, 'utf-8'))
+    console.log('=== 저장된 Config 파일 내용 ===')
+    console.log('savedConfig.kpis:', JSON.stringify(savedConfig.kpis, null, 2))
+    console.log('savedConfig.kpis 개수:', savedConfig.kpis ? savedConfig.kpis.length : 0)
 
     try {
       // Python 실행 명령 (가상환경 우선, 없으면 기본 Python)

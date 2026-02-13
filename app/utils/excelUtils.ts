@@ -85,7 +85,17 @@ export function extractMetrics(jsonData: any[][]): string[] {
     if (row && row.length > 0 && typeof row[0] === 'string') {
       let metric = row[0].trim()
       
-      if (metric && !metric.startsWith('Unnamed:')) {
+      // 필터링 조건 강화:
+      // 1. 빈 문자열 제외
+      // 2. Unnamed: 로 시작하는 것 제외
+      // 3. # 으로 시작하는 주석 제외
+      // 4. Segments 같은 헤더 제외
+      if (
+        metric && 
+        !metric.startsWith('Unnamed:') &&
+        !metric.startsWith('#') &&
+        !metric.match(/^Segments(\s*\(\d+\))?$/) // "Segments" 또는 "Segments (2)" 같은 패턴 제외
+      ) {
         if (metricCount[metric]) {
           metricCount[metric]++
           metric = `${metric} (${metricCount[metric]})`

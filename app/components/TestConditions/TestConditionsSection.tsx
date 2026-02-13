@@ -38,9 +38,7 @@ export function TestConditionsSection({
   }
 
   return (
-    <div className="form-section">
-      <h2>2. 테스트 조건 설정</h2>
-      
+    <>
       {pendingFilesCount > 0 && (
         <div style={{
           padding: '12px',
@@ -155,7 +153,8 @@ export function TestConditionsSection({
           다음 단계 →
         </button>
       </div>
-    </div>
+    </>
   )
 }
+
 

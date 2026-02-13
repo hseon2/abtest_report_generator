@@ -30,8 +30,7 @@ export function FileUploadSection({
   onNext,
 }: FileUploadSectionProps) {
   return (
-    <div className="form-section">
-      <h2>1. 파일 업로드</h2>
+    <>
       <div className="form-group">
         <label htmlFor="file">Excel/CSV 파일 (여러 개 선택 가능)</label>
         <input
@@ -236,7 +235,8 @@ export function FileUploadSection({
           다음 단계 →
         </button>
       </div>
-    </div>
+    </>
   )
 }
+
 
