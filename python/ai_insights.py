@@ -52,10 +52,10 @@ def generate_ai_insights(results_summary, api_key=None):
                     primary_details.append(detail)
             else:
                 detail = f"- {kpi_name} ({country}, {report_order}, {segment}): Uplift {uplift:+.2f}%"
-                if confidence is not None:
-                    detail += f", 신뢰도 {confidence:.2f}%"
-                detail += f", 판정: {verdict}"
-                primary_details.append(detail)
+            if confidence is not None:
+                detail += f", 신뢰도 {confidence:.2f}%"
+            detail += f", 판정: {verdict}"
+            primary_details.append(detail)
     
     # 리포트 순서별 비교 정보 준비
     comparison_info = ""
