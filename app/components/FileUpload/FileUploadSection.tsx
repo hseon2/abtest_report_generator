@@ -3,11 +3,13 @@
 import React from 'react'
 import { FileMetadata } from '../../types'
 import { COUNTRIES } from '../../constants'
+import { LoadingModal } from '../LoadingModal/LoadingModal'
 
 interface FileUploadSectionProps {
   pendingFiles: FileMetadata[]
   files: FileMetadata[]
   selectedPreviewFileId: string | null
+  isUploading: boolean
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onFileClick: (id: string) => void
   onFileConfirm: (id: string) => void
@@ -21,6 +23,7 @@ export function FileUploadSection({
   pendingFiles,
   files,
   selectedPreviewFileId,
+  isUploading,
   onFileChange,
   onFileClick,
   onFileConfirm,
@@ -31,6 +34,10 @@ export function FileUploadSection({
 }: FileUploadSectionProps) {
   return (
     <>
+      <LoadingModal 
+        isOpen={isUploading} 
+        message="📄 파일 처리 중입니다... (날짜 자동 추출 중)" 
+      />
       <div className="form-group">
         <label htmlFor="file">Excel/CSV 파일 (여러 개 선택 가능)</label>
         <input
@@ -63,10 +70,22 @@ export function FileUploadSection({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ fontSize: '13px', fontWeight: '600' }}>
-                  {fileMeta.file.name}
-                  {selectedPreviewFileId === fileMeta.id && ' 👁️'}
-                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600' }}>
+                    {fileMeta.file.name}
+                    {selectedPreviewFileId === fileMeta.id && ' 👁️'}
+                  </div>
+                  {(fileMeta.startDate || fileMeta.endDate) && (
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#27ae60', 
+                      marginTop: '4px',
+                      fontStyle: 'italic'
+                    }}>
+                      📅 {fileMeta.startDate || '시작일 미정'} ~ {fileMeta.endDate || '종료일 미정'}
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -112,6 +131,26 @@ export function FileUploadSection({
                       <option value="3rd report">3rd report</option>
                       <option value="final report">final report</option>
                     </select>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>시작일 📅</label>
+                    <input
+                      type="date"
+                      value={fileMeta.startDate || ''}
+                      onChange={(e) => onFileMetadataUpdate(fileMeta.id, 'startDate', e.target.value)}
+                      style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '12px' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>종료일 📅</label>
+                    <input
+                      type="date"
+                      value={fileMeta.endDate || ''}
+                      onChange={(e) => onFileMetadataUpdate(fileMeta.id, 'endDate', e.target.value)}
+                      style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '12px' }}
+                    />
                   </div>
                 </div>
                 <button
@@ -169,6 +208,16 @@ export function FileUploadSection({
                   <div style={{ fontSize: '11px', color: '#555' }}>
                     {fileMeta.country} | {fileMeta.reportOrder}
                   </div>
+                  {(fileMeta.startDate || fileMeta.endDate) && (
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#27ae60', 
+                      marginTop: '4px',
+                      fontStyle: 'italic'
+                    }}>
+                      📅 {fileMeta.startDate || '시작일 미정'} ~ {fileMeta.endDate || '종료일 미정'}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '5px' }}>
                   <button

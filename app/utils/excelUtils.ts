@@ -127,6 +127,47 @@ export function isCsvFile(file: File): boolean {
 }
 
 /**
+ * A4 셀에서 데이터 기간 추출
+ */
+export async function extractDataRange(file: File): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        
+        const firstSheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[firstSheetName]
+        
+        // A4 셀 읽기 (행 3, 열 0)
+        const cellAddress = 'A4'
+        const cell = worksheet[cellAddress]
+        
+        if (cell && cell.v) {
+          const cellValue = String(cell.v).trim()
+          console.log(`📅 A4 셀 데이터: ${cellValue}`)
+          resolve(cellValue)
+        } else {
+          console.log('A4 셀이 비어있습니다.')
+          resolve(null)
+        }
+      } catch (error) {
+        console.error('A4 셀 읽기 오류:', error)
+        reject(error)
+      }
+    }
+    
+    reader.onerror = () => {
+      reject(new Error('파일 읽기 실패'))
+    }
+    
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+/**
  * Excel 데이터에서 메트릭 추출 (중복 처리 포함)
  */
 export function extractMetrics(jsonData: any[][]): string[] {

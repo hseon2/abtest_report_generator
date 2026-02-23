@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FileMetadata } from '../types'
-import { loadExcelPreview, extractMetrics, convertCsvToXlsx, isCsvFile } from '../utils/excelUtils'
+import { loadExcelPreview, extractMetrics, convertCsvToXlsx, isCsvFile, extractDataRange } from '../utils/excelUtils'
 
 export function useFileManagement() {
   const [files, setFiles] = useState<FileMetadata[]>([])
@@ -9,12 +9,15 @@ export function useFileManagement() {
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([])
   const [availableMetrics, setAvailableMetrics] = useState<string[]>([])
   const [selectedPreviewFileId, setSelectedPreviewFileId] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState<boolean>(false)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || [])
     if (selectedFiles.length === 0) {
       return
     }
+
+    setIsUploading(true)
 
     // CSV 파일을 XLSX로 변환
     const processedFilesPromises = selectedFiles.map(async (file): Promise<FileMetadata> => {
@@ -32,12 +35,47 @@ export function useFileManagement() {
         }
       }
       
+      // A4 셀에서 데이터 기간 추출
+      let startDate: string | null = null
+      let endDate: string | null = null
+      try {
+        const rawText = await extractDataRange(processedFile)
+        
+        if (rawText) {
+          console.log(`📅 A4 셀 원본 텍스트: ${rawText}`)
+          
+          // Gemini API로 날짜 파싱
+          const parseResponse = await fetch('/api/parse-date-range', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: rawText })
+          })
+          
+          if (parseResponse.ok) {
+            const parseResult = await parseResponse.json()
+            if (parseResult.success && parseResult.dateRange) {
+              startDate = parseResult.dateRange.startDate || null
+              endDate = parseResult.dateRange.endDate || null
+              console.log(`✅ 데이터 기간 추출 성공: ${startDate} ~ ${endDate}`)
+            } else {
+              console.log(`⚠️ 날짜 파싱 실패`)
+            }
+          } else {
+            console.log(`⚠️ API 호출 실패`)
+          }
+        }
+      } catch (error) {
+        console.error('데이터 기간 추출 실패:', error)
+      }
+      
       return {
         id: `${Date.now()}_${Math.random()}`,
         file: processedFile,
         country: 'UK' as const,
         reportOrder: '1st report' as const,
         isConfirmed: false,
+        startDate,
+        endDate,
       }
     })
 
@@ -65,6 +103,7 @@ export function useFileManagement() {
       }
     }
     
+    setIsUploading(false)
     e.target.value = ''
   }
 
@@ -200,6 +239,7 @@ export function useFileManagement() {
     previewHeaders,
     availableMetrics,
     selectedPreviewFileId,
+    isUploading,
     handleFileChange,
     handleFileClick,
     updateFileMetadata,

@@ -18,5 +18,7 @@ export interface FileMetadata {
   previewData?: any[] | null
   previewHeaders?: string[]
   isConfirmed?: boolean
+  startDate?: string | null
+  endDate?: string | null
 }
 

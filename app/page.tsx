@@ -29,6 +29,7 @@ export default function Home() {
     previewData, 
     previewHeaders,
     availableMetrics,
+    isUploading,
     handleFileChange,
     confirmFile, 
     removeFile, 
@@ -64,23 +65,24 @@ export default function Home() {
   return (
     <div className="app-container" style={{ margin: 0, padding: 0, width: '100%' }}>
       <div style={{ display: 'flex', width: '100%', flex: 1 }}>
-        {/* 왼쪽 사이드바 */}
-        <div 
-          className="sidebar" 
-          ref={sidebarRef}
-          style={{ width: `${sidebarWidth}px`, minWidth: '250px', maxWidth: '70vw' }}
-        >
+      {/* 왼쪽 사이드바 */}
+      <div 
+        className="sidebar" 
+        ref={sidebarRef}
+        style={{ width: `${sidebarWidth}px`, minWidth: '250px', maxWidth: '70vw' }}
+      >
           <div className="sidebar-content">
             <h1 className="app-title">A/B 테스트 리포트 생성기</h1>
-            
+
             {/* 1단계: 파일 업로드 */}
             {currentStep === 1 && (
-              <div className="form-section">
-                <h2>1. 파일 업로드</h2>
+        <div className="form-section">
+          <h2>1. 파일 업로드</h2>
                 <FileUploadSection
                   pendingFiles={pendingFiles}
                   files={files}
                   selectedPreviewFileId={selectedPreviewFileId}
+                  isUploading={isUploading}
                   onFileChange={handleFileChange}
                   onFileClick={handleFileClick}
                   onFileConfirm={confirmFile}
@@ -88,8 +90,8 @@ export default function Home() {
                   onFileEdit={editFile}
                   onFileMetadataUpdate={updateFileMetadata}
                   onNext={() => setCurrentStep(2)}
-                />
-              </div>
+            />
+          </div>
             )}
 
             {/* 2단계: 테스트 조건 설정 */}
@@ -105,12 +107,12 @@ export default function Home() {
                   onPrevious={() => setCurrentStep(1)}
                   onNext={() => setCurrentStep(3)}
                 />
-              </div>
-            )}
+            </div>
+          )}
 
             {/* 3단계: KPI 설정 */}
             {currentStep === 3 && (
-              <div className="form-section">
+        <div className="form-section">
                 <h2>3. KPI 설정</h2>
                 <KPISetupSection
                   kpis={config.kpis}
@@ -216,7 +218,7 @@ export default function Home() {
                   >
                     ← KPI 재설정
                   </button>
-                  <button
+              <button
                     type="button"
                     onClick={() => {
                       setCurrentStep(1)
@@ -233,23 +235,23 @@ export default function Home() {
                       fontSize: '13px',
                       fontWeight: '600'
                     }}
-                  >
+              >
                     🔄 새로 시작
-                  </button>
-                </div>
-              </div>
+              </button>
+            </div>
+        </div>
             )}
           </div>
-        </div>
+      </div>
 
-        {/* 리사이저 */}
-        <div
-          ref={resizeRef}
-          className="sidebar-resizer"
-          onMouseDown={handleResizeStart}
-        />
+      {/* 리사이저 */}
+      <div
+        ref={resizeRef}
+        className="sidebar-resizer"
+        onMouseDown={handleResizeStart}
+      />
 
-        {/* 오른쪽 메인 영역 */}
+      {/* 오른쪽 메인 영역 */}
         <div className="main-content" style={{ padding: 0, margin: 0, width: '100%', flex: '1 1 auto' }}>
           {/* 미리보기 상단 단계 표시 바 */}
           <div style={{ 
@@ -284,25 +286,25 @@ export default function Home() {
                     alignItems: 'center',
                     gap: '8px',
                     color: currentStep === item.step ? '#3498db' : currentStep > item.step ? '#27ae60' : '#999',
-                    fontSize: '14px',
+              fontSize: '14px',
                     fontWeight: currentStep === item.step ? '700' : currentStep > item.step ? '600' : '400'
-                  }}>
+            }}>
                     <div style={{
                       width: '24px',
                       height: '24px',
                       borderRadius: '50%',
                       backgroundColor: currentStep === item.step ? '#3498db' : currentStep > item.step ? '#27ae60' : '#e0e0e0',
                       color: 'white',
-                      display: 'flex',
-                      alignItems: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '12px',
                       fontWeight: '600'
                     }}>
                       {currentStep > item.step ? '✓' : item.step}
-                    </div>
+              </div>
                     <span>{item.label}</span>
-                  </div>
+                </div>
                   {index < arr.length - 1 && (
                     <div style={{ 
                       width: '40px', 
@@ -327,7 +329,7 @@ export default function Home() {
               }}>
                 <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3e50', marginBottom: '10px' }}>
                   {loadingMessage}
-                </div>
+              </div>
                 <div style={{ 
                   width: '100%', 
                   height: '4px', 
@@ -343,15 +345,15 @@ export default function Home() {
                     animation: 'loading 1.5s ease-in-out infinite',
                     borderRadius: '2px'
                   }} />
-                </div>
+            </div>
               </div>
             )}
-
+            
             {/* Raw Data 정보 */}
             {!loading && results && rawDataInfo && rawDataInfo.length > 0 && (
               <div className="results-section" style={{ marginBottom: '20px' }}>
-                <div style={{ 
-                  background: '#f8f9fa', 
+            <div style={{ 
+                          background: '#f8f9fa',
                   padding: '15px', 
                   borderRadius: '8px',
                   border: '1px solid #e0e0e0'
@@ -374,7 +376,7 @@ export default function Home() {
                     </span>
                   </div>
                   {rawDataExpanded && (
-                    <div style={{ 
+                  <div style={{ 
                       marginTop: '15px',
                       maxHeight: '400px',
                       overflowY: 'auto',
@@ -386,15 +388,15 @@ export default function Home() {
                       padding: '15px',
                       borderRadius: '4px',
                       border: '1px solid #dee2e6'
-                    }}>
+                  }}>
                       {rawDataInfo.map((line, i) => (
                         <div key={i}>{line}</div>
                       ))}
-                    </div>
-                  )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+        )}
 
             {/* 분석 결과 */}
             {!loading && results && (
