@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FileMetadata } from '../types'
-import { loadExcelPreview, extractMetrics } from '../utils/excelUtils'
+import { loadExcelPreview, extractMetrics, convertCsvToXlsx, isCsvFile } from '../utils/excelUtils'
 
 export function useFileManagement() {
   const [files, setFiles] = useState<FileMetadata[]>([])
@@ -16,13 +16,32 @@ export function useFileManagement() {
       return
     }
 
-    const newFiles: FileMetadata[] = selectedFiles.map((file) => ({
-      id: `${Date.now()}_${Math.random()}`,
-      file,
-      country: 'UK',
-      reportOrder: '1st report',
-      isConfirmed: false,
-    }))
+    // CSV 파일을 XLSX로 변환
+    const processedFilesPromises = selectedFiles.map(async (file) => {
+      let processedFile = file
+      
+      // CSV 파일이면 XLSX로 변환
+      if (isCsvFile(file)) {
+        console.log(`📄 CSV 파일 감지: ${file.name}, XLSX로 변환 중...`)
+        try {
+          processedFile = await convertCsvToXlsx(file)
+        } catch (error) {
+          console.error(`CSV 변환 실패: ${file.name}`, error)
+          // 변환 실패 시 원본 파일 사용
+          processedFile = file
+        }
+      }
+      
+      return {
+        id: `${Date.now()}_${Math.random()}`,
+        file: processedFile,
+        country: 'UK',
+        reportOrder: '1st report',
+        isConfirmed: false,
+      }
+    })
+
+    const newFiles: FileMetadata[] = await Promise.all(processedFilesPromises)
 
     setPendingFiles((prev) => [...prev, ...newFiles])
 
