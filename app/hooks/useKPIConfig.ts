@@ -3,7 +3,7 @@ import { Config, KPIConfig } from '../types'
 
 export function useKPIConfig() {
   const [config, setConfig] = useState<Config>({
-    kpis: [{ name: '', numerator: '', denominator: '', type: 'rate' }],
+    kpis: [{ name: '', numerator: '', denominator: '', type: 'rate', category: 'primary' }],
   })
 
   const addKPI = () => {
@@ -11,7 +11,7 @@ export function useKPIConfig() {
       ...config,
       kpis: [
         ...config.kpis,
-        { name: '', numerator: '', denominator: '', type: 'rate' },
+        { name: '', numerator: '', denominator: '', type: 'rate', category: 'primary' },
       ],
     })
   }

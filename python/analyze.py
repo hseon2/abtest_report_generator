@@ -871,6 +871,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'country': country or 'N/A',
                         'device': base_segment_name,
                         'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
                         'controlRate': rate_c,
                         'controlValue': num_c,
                         'denominatorSizeControl': den_c if den_c is not None else 0,
@@ -914,6 +915,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'country': country or 'N/A',
                         'device': base_segment_name or 'All',
                         'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
                         'controlValue': rev_c,
                         'variations': variation_data,
                     })
@@ -955,6 +957,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'country': country or 'N/A',
                         'device': base_segment_name or 'All',
                         'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
                         'controlValue': None,  # Control 값 없음
                         'controlRate': None,  # Control rate 없음
                         'variations': variation_data,
@@ -1012,6 +1015,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'country': country or 'N/A',
                         'device': base_segment_name,
                         'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
                         'controlRate': rpv_c,
                         'controlValue': rev_c,
                         'variations': variation_data,
@@ -1110,6 +1114,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'country': country or 'N/A',  # 국가 정보가 없을 수 있음
                     'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
                     'kpiName': kpi_config['name'],
+                    'category': kpi_config.get('category', 'primary'),
                     'controlValue': num_c,
                     'variationValue': num_v,
                     'controlRate': rate_c,
@@ -1154,6 +1159,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'country': country or 'N/A',
                     'device': display_segment_name or 'All',
                     'kpiName': kpi_config['name'],
+                    'category': kpi_config.get('category', 'primary'),
                     'controlValue': None,  # Control 값 없음
                     'variationValue': val_v,
                     'controlRate': None,  # Control rate 없음
@@ -1200,6 +1206,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'country': country or 'N/A',  # 국가 정보가 없을 수 있음
                     'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
                     'kpiName': kpi_config['name'],
+                    'category': kpi_config.get('category', 'primary'),
                     'controlValue': rev_c,
                     'variationValue': rev_v,
                     'controlRate': None,
@@ -1255,6 +1262,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'country': country or 'N/A',  # 국가 정보가 없을 수 있음
                     'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
                     'kpiName': kpi_config['name'],
+                    'category': kpi_config.get('category', 'primary'),
                     'controlValue': rev_c,
                     'variationValue': rev_v,
                     'controlRate': rpv_c,
@@ -1329,6 +1337,7 @@ def compute_secondary_kpi(data_df, kpi_label, country='UK', segment_mapping=None
             'country': country or 'N/A',  # 국가 정보가 없을 수 있음
             'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
             'kpiName': kpi_label,
+            'category': 'secondary',  # Secondary KPI로 고정
             'controlValue': val_c,
             'variationValue': val_v,
             'controlRate': None,
@@ -2073,6 +2082,7 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
                         'country': missing['country'],
                         'device': missing['segment'],
                         'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
                         'error': True,
                         'errorMessage': f"{missing['reportOrder']} ({missing['country']}) 파일에서 메트릭 '{missing['metric']}'을(를) 찾을 수 없습니다.",
                         'reportOrder': missing['reportOrder']
@@ -2149,6 +2159,7 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
                         'country': missing['country'],
                         'device': missing['segment'],
                         'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
                         'error': True,
                         'errorMessage': f"{missing['reportOrder']} ({missing['country']}) 파일에서 메트릭 '{missing['metric']}'을(를) 찾을 수 없습니다.",
                         'reportOrder': missing['reportOrder']

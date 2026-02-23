@@ -3,6 +3,7 @@ export interface KPIConfig {
   numerator: string
   denominator: string
   type: 'rate' | 'revenue' | 'rpv' | 'simple' | 'variation_only' | string
+  category?: 'primary' | 'secondary' | 'additional'
 }
 
 export interface Config {

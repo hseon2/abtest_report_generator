@@ -51,6 +51,18 @@ export function KPISetupSection({
       {kpis.map((kpi, index) => (
         <div key={index} className="kpi-item">
           <div className="form-group">
+            <label>카테고리</label>
+            <select
+              value={kpi.category || 'primary'}
+              onChange={(e) => onKPIUpdate(index, 'category', e.target.value)}
+            >
+              <option value="primary">Primary KPI</option>
+              <option value="secondary">Secondary KPI</option>
+              <option value="additional">Additional Data</option>
+            </select>
+          </div>
+          
+          <div className="form-group">
             <label>KPI 이름</label>
             <input
               type="text"

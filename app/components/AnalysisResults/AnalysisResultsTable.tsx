@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { groupByKPI, groupByReportOrder, groupByCountry, getReportOrderSort } from '../../utils/formatters'
+import { groupByKPI, groupByReportOrder, groupByCountry, getReportOrderSort, getKPICategorySort, getKPICategoryLabel } from '../../utils/formatters'
 
 interface AnalysisResultsTableProps {
   results: any[]
@@ -106,9 +106,17 @@ export function AnalysisResultsTable({
                     {country}
                   </h4>
                   
-                  {/* 각 국가 내에서 KPI별로 그룹화 */}
-                  {Object.entries(groupByKPI(countryResults)).map(([kpiName, kpiResults]: [string, any[]]) => {
+                  {/* 각 국가 내에서 KPI별로 그룹화하고 카테고리별로 정렬 */}
+                  {Object.entries(groupByKPI(countryResults))
+                    .sort(([, kpiResultsA]: [string, any[]], [, kpiResultsB]: [string, any[]]) => {
+                      const categoryA = kpiResultsA[0]?.category
+                      const categoryB = kpiResultsB[0]?.category
+                      return getKPICategorySort(categoryA) - getKPICategorySort(categoryB)
+                    })
+                    .map(([kpiName, kpiResults]: [string, any[]]) => {
                     const firstResult = kpiResults[0]
+                    const kpiCategory = firstResult?.category
+                    const categoryLabel = getKPICategoryLabel(kpiCategory)
                     
                     const isVariationOnly = firstResult && 
                       (firstResult.controlValue === null || firstResult.controlValue === undefined) &&
@@ -122,6 +130,7 @@ export function AnalysisResultsTable({
                     return (
                       <div key={kpiName} style={{ marginBottom: '25px' }}>
                         <h5 style={{ color: '#7f8c8d', marginBottom: '12px', paddingBottom: '5px', borderBottom: '1px solid #bdc3c7', fontSize: '16px' }}>
+                          {categoryLabel && <span style={{ color: '#3498db', fontWeight: 'bold', marginRight: '8px' }}>{categoryLabel}</span>}
                           {kpiName}
                         </h5>
                         
