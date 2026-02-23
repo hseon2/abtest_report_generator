@@ -17,7 +17,7 @@ export function useFileManagement() {
     }
 
     // CSV 파일을 XLSX로 변환
-    const processedFilesPromises = selectedFiles.map(async (file) => {
+    const processedFilesPromises = selectedFiles.map(async (file): Promise<FileMetadata> => {
       let processedFile = file
       
       // CSV 파일이면 XLSX로 변환
@@ -35,13 +35,13 @@ export function useFileManagement() {
       return {
         id: `${Date.now()}_${Math.random()}`,
         file: processedFile,
-        country: 'UK',
-        reportOrder: '1st report',
+        country: 'UK' as const,
+        reportOrder: '1st report' as const,
         isConfirmed: false,
       }
     })
 
-    const newFiles: FileMetadata[] = await Promise.all(processedFilesPromises)
+    const newFiles = await Promise.all(processedFilesPromises)
 
     setPendingFiles((prev) => [...prev, ...newFiles])
 
