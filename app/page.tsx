@@ -367,7 +367,7 @@ export default function Home() {
         )}
 
             {/* 분석 결과 */}
-            {!loading && results && (
+            {!loading && results && currentStep === 4 && (
               <AnalysisResultsSection
                 results={results}
                 variationCount={variationCount}
@@ -382,7 +382,7 @@ export default function Home() {
             )}
 
             {/* 파일 미리보기 */}
-            {!loading && !results && (
+            {!loading && (currentStep !== 4 || !results) && (
               <FilePreviewSection
                 files={files}
                 pendingFiles={pendingFiles}
