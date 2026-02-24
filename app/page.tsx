@@ -155,7 +155,9 @@ export default function Home() {
                   </div>
                 ) : (
                   <div>
-                    <p>분석을 실행해주세요.</p>
+                    <p style={{ color: loading ? '#3498db' : '#2c3e50', fontWeight: loading ? '600' : 'normal' }}>
+                      {loading ? '분석 결과를 불러오고 있습니다...' : '분석을 실행해주세요.'}
+                    </p>
                     <button
                       type="button"
                       onClick={() => setCurrentStep(3)}
