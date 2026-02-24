@@ -67,6 +67,8 @@ export async function POST(request: NextRequest) {
         path,
         country: fileMetadata[index]?.country || 'UK',
         reportOrder: fileMetadata[index]?.reportOrder || '1st report',
+        startDate: fileMetadata[index]?.startDate || null,
+        endDate: fileMetadata[index]?.endDate || null,
       })),
       debug: true,
     }
@@ -125,9 +127,42 @@ export async function POST(request: NextRequest) {
         console.error('Python stderr:', stderr)
       }
 
-      // 결과 JSON 읽기
+      // 결과 JSON 읽기 (파일이 완전히 저장되었는지 확인)
       const resultsPath = join(tmpDir, 'results.json')
-      const results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
+      
+      // 파일이 존재하고 읽을 수 있을 때까지 대기 (최대 5초)
+      let results: any = null
+      let retryCount = 0
+      const maxRetries = 50 // 5초 (100ms * 50)
+      
+      while (retryCount < maxRetries) {
+        try {
+          if (fs.existsSync(resultsPath)) {
+            const fileContent = fs.readFileSync(resultsPath, 'utf-8')
+            if (fileContent && fileContent.trim().length > 0) {
+              results = JSON.parse(fileContent)
+              // primaryResults가 있고 비어있지 않은지 확인
+              if (results.primaryResults && results.primaryResults.length > 0) {
+                console.log(`결과 파일 확인 완료: ${results.primaryResults.length}개 결과`)
+                break
+              }
+            }
+          }
+        } catch (err) {
+          // 파일이 아직 완전히 저장되지 않았을 수 있음
+          console.log(`결과 파일 읽기 시도 ${retryCount + 1}/${maxRetries}...`)
+        }
+        
+        retryCount++
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 100)) // 100ms 대기
+        }
+      }
+      
+      // 최종적으로 파일 읽기 시도
+      if (!results) {
+        results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
+      }
       
       // 결과가 비어있으면 경고
       const hasResults = 
@@ -140,8 +175,17 @@ export async function POST(request: NextRequest) {
         // 에러는 아니지만 사용자에게 알림
         results.warning = '분석 결과가 없습니다. Excel 파일 형식과 KPI 설정을 확인해주세요.'
       }
+      
+      // days 값이 포함되어 있는지 확인 (디버깅)
+      if (results.primaryResults && results.primaryResults.length > 0) {
+        const resultsWithDays = results.primaryResults.filter((r: any) => r.days !== undefined && r.days !== null)
+        console.log(`days 값이 포함된 결과: ${resultsWithDays.length}/${results.primaryResults.length}개`)
+        if (resultsWithDays.length > 0) {
+          console.log(`첫 번째 결과의 days 값: ${resultsWithDays[0].days}`)
+        }
+      }
 
-      // Excel 리포트 생성
+      // Excel 리포트 생성 (모든 결과가 저장된 후)
       const excelScript = join(process.cwd(), 'python', 'report_excel.py')
       const { stdout: excelStdout, stderr: excelStderr } = await execAsync(
         `${pythonCmd} "${excelScript}" "${resultsPath}"`

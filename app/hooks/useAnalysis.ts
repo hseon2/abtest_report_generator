@@ -78,7 +78,22 @@ export function useAnalysis() {
         confirmedFiles.map((f) => ({
           country: f.country,
           reportOrder: f.reportOrder,
+          startDate: f.startDate || null,
+          endDate: f.endDate || null,
         }))
+      ))
+      
+      // 디버깅: 전달되는 fileMetadata 확인
+      console.log('=== 전달되는 fileMetadata ===')
+      console.log(JSON.stringify(
+        confirmedFiles.map((f) => ({
+          country: f.country,
+          reportOrder: f.reportOrder,
+          startDate: f.startDate || null,
+          endDate: f.endDate || null,
+        })),
+        null,
+        2
       ))
       
       formData.append('config', JSON.stringify({

@@ -872,6 +872,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'device': base_segment_name,
                         'kpiName': kpi_config['name'],
                         'category': kpi_config.get('category', 'primary'),
+                        'numerator': kpi_config.get('numerator', ''),
+                        'denominator': kpi_config.get('denominator', ''),
                         'controlRate': rate_c,
                         'controlValue': num_c,
                         'denominatorSizeControl': den_c if den_c is not None else 0,
@@ -916,6 +918,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'device': base_segment_name or 'All',
                         'kpiName': kpi_config['name'],
                         'category': kpi_config.get('category', 'primary'),
+                        'numerator': kpi_config.get('numerator', ''),
+                        'denominator': kpi_config.get('denominator', ''),
                         'controlValue': rev_c,
                         'variations': variation_data,
                     })
@@ -958,6 +962,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'device': base_segment_name or 'All',
                         'kpiName': kpi_config['name'],
                         'category': kpi_config.get('category', 'primary'),
+                        'numerator': kpi_config.get('numerator', ''),
+                        'denominator': kpi_config.get('denominator', ''),
                         'controlValue': None,  # Control 값 없음
                         'controlRate': None,  # Control rate 없음
                         'variations': variation_data,
@@ -1016,6 +1022,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'device': base_segment_name,
                         'kpiName': kpi_config['name'],
                         'category': kpi_config.get('category', 'primary'),
+                        'numerator': kpi_config.get('numerator', ''),
+                        'denominator': kpi_config.get('denominator', ''),
                         'controlRate': rpv_c,
                         'controlValue': rev_c,
                         'variations': variation_data,
@@ -1115,6 +1123,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
                     'kpiName': kpi_config['name'],
                     'category': kpi_config.get('category', 'primary'),
+                    'numerator': kpi_config.get('numerator', ''),
+                    'denominator': kpi_config.get('denominator', ''),
                     'controlValue': num_c,
                     'variationValue': num_v,
                     'controlRate': rate_c,
@@ -1160,6 +1170,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'device': display_segment_name or 'All',
                     'kpiName': kpi_config['name'],
                     'category': kpi_config.get('category', 'primary'),
+                    'numerator': kpi_config.get('numerator', ''),
+                    'denominator': kpi_config.get('denominator', ''),
                     'controlValue': None,  # Control 값 없음
                     'variationValue': val_v,
                     'controlRate': None,  # Control rate 없음
@@ -1207,6 +1219,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
                     'kpiName': kpi_config['name'],
                     'category': kpi_config.get('category', 'primary'),
+                    'numerator': kpi_config.get('numerator', ''),
+                    'denominator': kpi_config.get('denominator', ''),
                     'controlValue': rev_c,
                     'variationValue': rev_v,
                     'controlRate': None,
@@ -1263,6 +1277,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
                     'kpiName': kpi_config['name'],
                     'category': kpi_config.get('category', 'primary'),
+                    'numerator': kpi_config.get('numerator', ''),
+                    'denominator': kpi_config.get('denominator', ''),
                     'controlValue': rev_c,
                     'variationValue': rev_v,
                     'controlRate': rpv_c,
@@ -1338,6 +1354,8 @@ def compute_secondary_kpi(data_df, kpi_label, country='UK', segment_mapping=None
             'device': display_segment_name or 'All',  # 사용자가 입력한 세그먼트 이름 사용
             'kpiName': kpi_label,
             'category': 'secondary',  # Secondary KPI로 고정
+            'numerator': '',  # Secondary KPI는 numerator/denominator 없음
+            'denominator': '',  # Secondary KPI는 numerator/denominator 없음
             'controlValue': val_c,
             'variationValue': val_v,
             'controlRate': None,
@@ -1565,6 +1583,44 @@ def generate_insights(primary_results, use_ai=False):
         insights['recommendation'] = 'Iterate: 테스트 결과를 바탕으로 Variation을 개선하고 재테스트를 권장합니다.'
     
     return insights
+
+def calculate_days_from_config(config, country, report_order):
+    """config의 files 배열에서 해당 국가와 리포트 순서에 맞는 startDate와 endDate를 찾아서 days 값을 계산
+    
+    Returns:
+        dict: {'days': int, 'startDate': str, 'endDate': str} 또는 None
+    """
+    files_config = config.get('files', [])
+    if not files_config:
+        return None
+    
+    # 해당 국가와 리포트 순서에 맞는 파일 찾기
+    for file_info in files_config:
+        file_country = file_info.get('country', 'UK')
+        file_report_order = file_info.get('reportOrder', '1st report')
+        
+        if file_country == country and file_report_order == report_order:
+            start_date_str = file_info.get('startDate')
+            end_date_str = file_info.get('endDate')
+            
+            if start_date_str and end_date_str:
+                try:
+                    from datetime import datetime as dt
+                    # ISO 형식 (YYYY-MM-DD) 파싱
+                    start_date = dt.strptime(start_date_str, '%Y-%m-%d')
+                    end_date = dt.strptime(end_date_str, '%Y-%m-%d')
+                    days = (end_date - start_date).days + 1  # 시작일 포함
+                    print(f"DEBUG: days 계산 성공 - {country}, {report_order}: {start_date_str} ~ {end_date_str}, days: {days}")
+                    return {
+                        'days': days,
+                        'startDate': start_date_str,
+                        'endDate': end_date_str
+                    }
+                except Exception as e:
+                    print(f"DEBUG: days 계산 실패 - {country}, {report_order}: {e}")
+                    return None
+    
+    return None
 
 def clean_results_for_json(results):
     """결과 딕셔너리에서 NaN 값을 None으로 변환"""
@@ -1795,6 +1851,14 @@ def main():
                                 country, config, report_order
                             )
                             
+                            # days 값 계산 및 추가
+                            date_info = calculate_days_from_config(config, country, report_order)
+                            if date_info:
+                                for r in country_results['primary']:
+                                    r['days'] = date_info.get('days')
+                                    r['startDate'] = date_info.get('startDate')
+                                    r['endDate'] = date_info.get('endDate')
+                            
                             print(f"  KPI: {len(country_results['primary'])}개")
                             
                             all_primary_results.extend(country_results['primary'])
@@ -1840,6 +1904,14 @@ def main():
                         combined_data_original, segment_names, single_country, False, [single_country],
                         single_country, config, country_report_order
                     )
+                    
+                    # days 값 계산 및 추가
+                    date_info = calculate_days_from_config(config, single_country, country_report_order)
+                    if date_info:
+                        for r in country_results['primary']:
+                            r['days'] = date_info.get('days')
+                            r['startDate'] = date_info.get('startDate')
+                            r['endDate'] = date_info.get('endDate')
                     
                     print(f"  KPI: {len(country_results['primary'])}개")
                     all_primary_results.extend(country_results['primary'])
@@ -2091,6 +2163,13 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
                 # 국가 정보 확인 및 추가 (항상 사용자가 선택한 국가로 설정)
                 for r in results:
                     r['country'] = selected_country  # 항상 사용자가 선택한 국가로 설정
+                # days 값 추가
+                date_info = calculate_days_from_config(config, selected_country, report_order)
+                if date_info:
+                    for r in results:
+                        r['days'] = date_info.get('days')
+                        r['startDate'] = date_info.get('startDate')
+                        r['endDate'] = date_info.get('endDate')
                 print(f"    결과 개수: {len(results)}")
                 print(f"    결과에 포함된 국가 정보: {[r.get('country') for r in results[:3]]}")  # 처음 3개만 로그
                 if len(results) == 0:
@@ -2168,6 +2247,13 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
                 # 국가 정보 확인 및 추가 (항상 사용자가 선택한 국가로 설정)
                 for r in results:
                     r['country'] = selected_country  # 항상 사용자가 선택한 국가로 설정
+                # days 값 추가
+                date_info = calculate_days_from_config(config, selected_country, report_order)
+                if date_info:
+                    for r in results:
+                        r['days'] = date_info.get('days')
+                        r['startDate'] = date_info.get('startDate')
+                        r['endDate'] = date_info.get('endDate')
                 print(f"    결과 개수: {len(results)}")
                 primary_results.extend(results)
                 if not results:
@@ -2201,6 +2287,25 @@ def save_results_and_insights(primary_results, config):
         'primaryResults': primary_results,
         'insights': insights,
     }
+    
+    # 디버깅: numerator와 denominator가 포함되어 있는지 확인
+    if primary_results and len(primary_results) > 0:
+        first_result = primary_results[0]
+        print(f"\n=== 결과 저장 전 디버깅 ===")
+        print(f"첫 번째 결과의 키: {list(first_result.keys())}")
+        print(f"첫 번째 결과의 numerator: {first_result.get('numerator')}")
+        print(f"첫 번째 결과의 denominator: {first_result.get('denominator')}")
+        print(f"첫 번째 결과의 kpiName: {first_result.get('kpiName')}")
+        
+        # numerator와 denominator가 있는 결과 개수 확인
+        results_with_numerator = [r for r in primary_results if r.get('numerator')]
+        results_with_denominator = [r for r in primary_results if r.get('denominator')]
+        print(f"numerator가 있는 결과: {len(results_with_numerator)}/{len(primary_results)}개")
+        print(f"denominator가 있는 결과: {len(results_with_denominator)}/{len(primary_results)}개")
+        if results_with_numerator:
+            print(f"첫 번째 numerator 값 예시: {results_with_numerator[0].get('numerator')}")
+        if results_with_denominator:
+            print(f"첫 번째 denominator 값 예시: {results_with_denominator[0].get('denominator')}")
     
     # NaN 값을 None으로 변환
     output = clean_results_for_json(output)
