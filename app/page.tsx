@@ -139,11 +139,7 @@ export default function Home() {
             {currentStep === 4 && (
               <div className="form-section">
                 <h2>4. 분석 결과 확인</h2>
-                {loading ? (
-                  <div style={{ textAlign: 'center', padding: '40px' }}>
-                    <p>분석 중입니다...</p>
-                  </div>
-                ) : results ? (
+                {results ? (
                   <div>
                     <p style={{ color: '#27ae60', fontWeight: '600', marginBottom: '20px' }}>
                       ✓ 분석이 완료되었습니다.
@@ -319,37 +315,6 @@ export default function Home() {
           </div>
           
           <div style={{ padding: '0 20px' }}>
-            {loading && (
-              <div className="loading" style={{ 
-                padding: '20px', 
-                textAlign: 'center',
-                backgroundColor: '#e8f4f8',
-                borderRadius: '8px',
-                marginBottom: '20px',
-                border: '2px solid #3498db'
-              }}>
-                <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3e50', marginBottom: '10px' }}>
-                  {loadingMessage}
-              </div>
-                <div style={{ 
-                  width: '100%', 
-                  height: '4px', 
-                  backgroundColor: '#d5e8f1',
-                  borderRadius: '2px',
-                  overflow: 'hidden',
-                  marginTop: '10px'
-                }}>
-                  <div style={{
-                    width: '30%',
-                    height: '100%',
-                    backgroundColor: '#3498db',
-                    animation: 'loading 1.5s ease-in-out infinite',
-                    borderRadius: '2px'
-                  }} />
-            </div>
-              </div>
-            )}
-            
             {/* Raw Data 정보 */}
             {!loading && results && rawDataInfo && rawDataInfo.length > 0 && (
               <div className="results-section" style={{ marginBottom: '20px' }}>
