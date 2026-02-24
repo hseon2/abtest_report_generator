@@ -34,10 +34,9 @@ export function FileUploadSection({
 }: FileUploadSectionProps) {
   return (
     <>
-      <LoadingModal 
-        isOpen={isUploading} 
-        message="📄 파일 처리 중입니다... (날짜 자동 추출 중)" 
-      />
+      {isUploading && (
+        <LoadingModal message="📄 파일 처리 중입니다... (날짜 자동 추출 중)" />
+      )}
       <div className="form-group">
         <label htmlFor="file">Excel/CSV 파일 (여러 개 선택 가능)</label>
         <input
