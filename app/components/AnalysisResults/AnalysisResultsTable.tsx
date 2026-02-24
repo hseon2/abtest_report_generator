@@ -38,11 +38,11 @@ export function AnalysisResultsTable({
     const minSampleSize = 100
     
     const additionalPeriodControl = controlValue < minSampleSize
-      ? Math.round(((minSampleSize - controlValue) * dataRange) / controlValue)
+      ? Math.ceil(((minSampleSize - controlValue) * dataRange) / controlValue)
       : 0
     
     const additionalPeriodVariation = variationValue < minSampleSize
-      ? Math.round(((minSampleSize - variationValue) * dataRange) / variationValue)
+      ? Math.ceil(((minSampleSize - variationValue) * dataRange) / variationValue)
       : 0
     
     return Math.max(additionalPeriodControl, additionalPeriodVariation)
