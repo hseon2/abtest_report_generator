@@ -18,6 +18,36 @@ export function AnalysisResultsTable({
   onReportOrderChange,
   getCountryDateInfo,
 }: AnalysisResultsTableProps) {
+  // 추가 모수 확보 기간 계산 함수
+  const calculateAdditionalPeriod = (
+    verdict: string,
+    controlDenominator: number | null | undefined,
+    variationDenominator: number | null | undefined,
+    country: string,
+    reportOrder: string
+  ): number | null => {
+    if (!verdict || !verdict.includes('모수 부족')) return null
+    if (!controlDenominator || !variationDenominator) return null
+    
+    const dateInfo = getCountryDateInfo ? getCountryDateInfo(country, reportOrder) : null
+    if (!dateInfo) return null
+    
+    const dataRange = dateInfo.days
+    
+    // 최소 모수가 100이라고 가정
+    const minSampleSize = 100
+    
+    const additionalPeriodControl = controlDenominator < minSampleSize
+      ? Math.round(((minSampleSize - controlDenominator) * dataRange) / controlDenominator)
+      : 0
+    
+    const additionalPeriodVariation = variationDenominator < minSampleSize
+      ? Math.round(((minSampleSize - variationDenominator) * dataRange) / variationDenominator)
+      : 0
+    
+    return Math.max(additionalPeriodControl, additionalPeriodVariation)
+  }
+
   if (!results || results.length === 0) {
     return (
       <div className="error">
@@ -291,12 +321,33 @@ export function AnalysisResultsTable({
                                           })}
                                           {Array.from({ length: variationCount }, (_, idx) => {
                                             const varData = r.variations.find((v: any) => v.variationNum === idx + 1)
+                                            const additionalDays = varData?.verdict 
+                                              ? calculateAdditionalPeriod(
+                                                  varData.verdict,
+                                                  r.denominatorSizeControl,
+                                                  varData.denominatorSizeVariation,
+                                                  r.country,
+                                                  reportOrder
+                                                )
+                                              : null
                                             return (
                                               <td key={`verdict-${idx}`} style={!varData || !varData.verdict ? { backgroundColor: '#e0e0e0' } : {}}>
                                                 {varData?.verdict ? (
-                                                  <span className={`verdict-${varData.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
-                                                    {varData.verdict}
-                                                  </span>
+                                                  <>
+                                                    <span className={`verdict-${varData.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
+                                                      {varData.verdict}
+                                                    </span>
+                                                    {additionalDays !== null && additionalDays > 0 && (
+                                                      <div style={{
+                                                        fontSize: '11px',
+                                                        color: '#e67e22',
+                                                        marginTop: '4px',
+                                                        fontStyle: 'italic'
+                                                      }}>
+                                                        *모수 확보까지 {additionalDays}일 소요 예상
+                                                      </div>
+                                                    )}
+                                                  </>
                                                 ) : (
                                                   <span style={{ color: '#999' }}>N/A</span>
                                                 )}
@@ -380,9 +431,30 @@ export function AnalysisResultsTable({
                                           </td>
                                           <td style={!r.verdict ? { backgroundColor: '#e0e0e0' } : {}}>
                                             {r.verdict ? (
-                                              <span className={`verdict-${r.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
-                                                {r.verdict}
-                                              </span>
+                                              <>
+                                                <span className={`verdict-${r.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
+                                                  {r.verdict}
+                                                </span>
+                                                {(() => {
+                                                  const additionalDays = calculateAdditionalPeriod(
+                                                    r.verdict,
+                                                    r.denominatorSizeControl,
+                                                    r.denominatorSizeVariation,
+                                                    r.country,
+                                                    reportOrder
+                                                  )
+                                                  return additionalDays !== null && additionalDays > 0 ? (
+                                                    <div style={{
+                                                      fontSize: '11px',
+                                                      color: '#e67e22',
+                                                      marginTop: '4px',
+                                                      fontStyle: 'italic'
+                                                    }}>
+                                                      *모수 확보까지 {additionalDays}일 소요 예상
+                                                    </div>
+                                                  ) : null
+                                                })()}
+                                              </>
                                             ) : (
                                               <span style={{ color: '#999' }}>N/A</span>
                                             )}
