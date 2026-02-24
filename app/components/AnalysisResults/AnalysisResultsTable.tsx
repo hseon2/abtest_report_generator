@@ -97,9 +97,6 @@ export function AnalysisResultsTable({
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([country, countryResults]: [string, any[]]) => {
                 const dateInfo = getCountryDateInfo ? getCountryDateInfo(country, reportOrder) : null
-                const countryLabel = dateInfo 
-                  ? `${country} (${dateInfo.startDate}~${dateInfo.endDate}, ${dateInfo.days} days)`
-                  : country
                 
                 return (
                 <div key={country} style={{ marginBottom: '35px' }}>
@@ -111,7 +108,17 @@ export function AnalysisResultsTable({
                     fontSize: '18px',
                     fontWeight: '600'
                   }}>
-                    {countryLabel}
+                    {country}
+                    {dateInfo && (
+                      <span style={{ 
+                        fontSize: '13px', 
+                        fontWeight: '400', 
+                        color: '#7f8c8d',
+                        marginLeft: '8px'
+                      }}>
+                        ({dateInfo.startDate}~{dateInfo.endDate}, {dateInfo.days} days)
+                      </span>
+                    )}
                   </h4>
                   
                   {/* 각 국가 내에서 KPI별로 그룹화하고 카테고리별로 정렬 */}
