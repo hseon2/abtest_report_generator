@@ -37,6 +37,29 @@ export function TestConditionsSection({
     onSegmentsChange(newSegments)
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      // 마지막 세그먼트에서 엔터를 누르면 새 세그먼트 추가
+      if (index === segments.length - 1) {
+        addSegment()
+        // 다음 렌더링 후 새 input에 포커스
+        setTimeout(() => {
+          const inputs = document.querySelectorAll<HTMLInputElement>('input[placeholder="세그먼트 이름"]')
+          if (inputs[index + 1]) {
+            inputs[index + 1].focus()
+          }
+        }, 0)
+      } else {
+        // 중간 세그먼트에서는 다음 input으로 포커스 이동
+        const inputs = document.querySelectorAll<HTMLInputElement>('input[placeholder="세그먼트 이름"]')
+        if (inputs[index + 1]) {
+          inputs[index + 1].focus()
+        }
+      }
+    }
+  }
+
   return (
     <>
       {pendingFilesCount > 0 && (
@@ -77,6 +100,7 @@ export function TestConditionsSection({
               type="text"
               value={segment}
               onChange={(e) => updateSegment(index, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
               placeholder="세그먼트 이름"
               style={{ flex: 1, padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
             />

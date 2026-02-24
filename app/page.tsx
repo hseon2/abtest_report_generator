@@ -8,6 +8,7 @@ import { FilePreviewSection } from './components/FilePreview/FilePreviewSection'
 import { AnalysisResultsSection } from './components/AnalysisResults/AnalysisResultsSection'
 import { InsightsPanel } from './components/AnalysisResults/InsightsPanel'
 import { DownloadButtons } from './components/AnalysisResults/DownloadButtons'
+import { LoadingModal } from './components/LoadingModal/LoadingModal'
 import { useKPIConfig } from './hooks/useKPIConfig'
 import { useFileManagement } from './hooks/useFileManagement'
 import { useSidebarResize } from './hooks/useSidebarResize'
@@ -404,6 +405,7 @@ export default function Home() {
                 results={results}
                 variationCount={variationCount}
                 selectedReportOrder={selectedReportOrder}
+                files={files}
                 excelBase64={excelBase64 || undefined}
                 excelUrl={excelUrl || undefined}
                 parsedDataBase64={parsedDataBase64 || undefined}
@@ -426,6 +428,11 @@ export default function Home() {
           </div>
         </div>
       </div>
+      
+      {/* 분석 중 로딩 모달 */}
+      {loading && (
+        <LoadingModal message={loadingMessage || "📊 데이터 분석 중입니다..."} />
+      )}
     </div>
   )
 }

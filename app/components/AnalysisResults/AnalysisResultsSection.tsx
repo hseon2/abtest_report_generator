@@ -2,11 +2,13 @@
 
 import React from 'react'
 import { AnalysisResultsTable } from './AnalysisResultsTable'
+import { FileMetadata } from '../../types'
 
 interface AnalysisResultsSectionProps {
   results: any
   variationCount: number
   selectedReportOrder: string | null
+  files?: FileMetadata[]
   excelBase64?: string
   excelUrl?: string
   parsedDataBase64?: string
@@ -18,6 +20,7 @@ export function AnalysisResultsSection({
   results,
   variationCount,
   selectedReportOrder,
+  files,
   excelBase64,
   excelUrl,
   parsedDataBase64,
@@ -40,6 +43,37 @@ export function AnalysisResultsSection({
 
   const allResults = getAllResults()
 
+  // 국가별 날짜 정보 생성 (reportOrder별로)
+  const getCountryDateInfo = (country: string, reportOrder: string) => {
+    if (!files || files.length === 0) return null
+    
+    const fileForCountry = files.find(
+      f => f.country === country && f.reportOrder === reportOrder
+    )
+    
+    if (!fileForCountry || !fileForCountry.startDate || !fileForCountry.endDate) return null
+    
+    // 날짜 계산
+    const start = new Date(fileForCountry.startDate)
+    const end = new Date(fileForCountry.endDate)
+    const diffTime = Math.abs(end.getTime() - start.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1 // 시작일 포함
+    
+    // 날짜 포맷 (YY/M/D)
+    const formatDate = (date: Date) => {
+      const year = date.getFullYear().toString().slice(-2)
+      const month = date.getMonth() + 1
+      const day = date.getDate()
+      return `${year}/${month}/${day}`
+    }
+    
+    return {
+      startDate: formatDate(start),
+      endDate: formatDate(end),
+      days: diffDays
+    }
+  }
+
   return (
     <div className="results-section">
       <div style={{ marginBottom: '20px' }}>
@@ -59,6 +93,7 @@ export function AnalysisResultsSection({
         variationCount={variationCount}
         selectedReportOrder={selectedReportOrder}
         onReportOrderChange={onReportOrderChange}
+        getCountryDateInfo={getCountryDateInfo}
       />
     </div>
   )

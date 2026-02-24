@@ -8,6 +8,7 @@ interface AnalysisResultsTableProps {
   variationCount: number
   selectedReportOrder: string | null
   onReportOrderChange: (order: string) => void
+  getCountryDateInfo?: (country: string, reportOrder: string) => { startDate: string; endDate: string; days: number } | null
 }
 
 export function AnalysisResultsTable({
@@ -15,6 +16,7 @@ export function AnalysisResultsTable({
   variationCount,
   selectedReportOrder,
   onReportOrderChange,
+  getCountryDateInfo,
 }: AnalysisResultsTableProps) {
   if (!results || results.length === 0) {
     return (
@@ -93,7 +95,13 @@ export function AnalysisResultsTable({
             {/* 각 리포트 순서 내에서 국가별로 그룹화 */}
             {Object.entries(groupByCountry(reportResults))
               .sort(([a], [b]) => a.localeCompare(b))
-              .map(([country, countryResults]: [string, any[]]) => (
+              .map(([country, countryResults]: [string, any[]]) => {
+                const dateInfo = getCountryDateInfo ? getCountryDateInfo(country, reportOrder) : null
+                const countryLabel = dateInfo 
+                  ? `${country} (${dateInfo.startDate}~${dateInfo.endDate}, ${dateInfo.days} days)`
+                  : country
+                
+                return (
                 <div key={country} style={{ marginBottom: '35px' }}>
                   <h4 style={{ 
                     color: '#34495e', 
@@ -103,7 +111,7 @@ export function AnalysisResultsTable({
                     fontSize: '18px',
                     fontWeight: '600'
                   }}>
-                    {country}
+                    {countryLabel}
                   </h4>
                   
                   {/* 각 국가 내에서 KPI별로 그룹화하고 카테고리별로 정렬 */}
@@ -385,7 +393,8 @@ export function AnalysisResultsTable({
                     )
                   })}
                 </div>
-              ))}
+                )
+              })}
           </div>
         ))}
     </>
