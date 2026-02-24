@@ -18,31 +18,31 @@ export function AnalysisResultsTable({
   onReportOrderChange,
   getCountryDateInfo,
 }: AnalysisResultsTableProps) {
-  // 추가 모수 확보 기간 계산 함수
+  // 추가 모수 확보 기간 계산 함수 (분자 기준)
   const calculateAdditionalPeriod = (
     verdict: string,
-    controlDenominator: number | null | undefined,
-    variationDenominator: number | null | undefined,
+    controlValue: number | null | undefined,
+    variationValue: number | null | undefined,
     country: string,
     reportOrder: string
   ): number | null => {
     if (!verdict || !verdict.includes('모수 부족')) return null
-    if (!controlDenominator || !variationDenominator) return null
+    if (controlValue === null || controlValue === undefined || variationValue === null || variationValue === undefined) return null
     
     const dateInfo = getCountryDateInfo ? getCountryDateInfo(country, reportOrder) : null
     if (!dateInfo) return null
     
     const dataRange = dateInfo.days
     
-    // 최소 모수가 100이라고 가정
+    // 최소 모수가 100 (분자 기준)
     const minSampleSize = 100
     
-    const additionalPeriodControl = controlDenominator < minSampleSize
-      ? Math.round(((minSampleSize - controlDenominator) * dataRange) / controlDenominator)
+    const additionalPeriodControl = controlValue < minSampleSize
+      ? Math.round(((minSampleSize - controlValue) * dataRange) / controlValue)
       : 0
     
-    const additionalPeriodVariation = variationDenominator < minSampleSize
-      ? Math.round(((minSampleSize - variationDenominator) * dataRange) / variationDenominator)
+    const additionalPeriodVariation = variationValue < minSampleSize
+      ? Math.round(((minSampleSize - variationValue) * dataRange) / variationValue)
       : 0
     
     return Math.max(additionalPeriodControl, additionalPeriodVariation)
@@ -324,8 +324,8 @@ export function AnalysisResultsTable({
                                             const additionalDays = varData?.verdict 
                                               ? calculateAdditionalPeriod(
                                                   varData.verdict,
-                                                  r.denominatorSizeControl,
-                                                  varData.denominatorSizeVariation,
+                                                  r.controlValue,
+                                                  varData.variationValue,
                                                   r.country,
                                                   reportOrder
                                                 )
@@ -438,8 +438,8 @@ export function AnalysisResultsTable({
                                                 {(() => {
                                                   const additionalDays = calculateAdditionalPeriod(
                                                     r.verdict,
-                                                    r.denominatorSizeControl,
-                                                    r.denominatorSizeVariation,
+                                                    r.controlValue,
+                                                    r.variationValue,
                                                     r.country,
                                                     reportOrder
                                                   )
