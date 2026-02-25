@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { writeFile, unlink, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { spawn } from 'child_process'
+import * as fs from 'fs'
 
-const execAsync = promisify(exec)
+const PROGRESS_LINE = /\[PROGRESS\](\d+)(?:\|(.*))?/
+
+function pushProgress(controller: ReadableStreamDefaultController<Uint8Array>, percent: number, message: string) {
+  const encoder = new TextEncoder()
+  controller.enqueue(encoder.encode(JSON.stringify({ type: 'progress', percent, message }) + '\n'))
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -91,188 +96,121 @@ export async function POST(request: NextRequest) {
     console.log('savedConfig.kpis:', JSON.stringify(savedConfig.kpis, null, 2))
     console.log('savedConfig.kpis 개수:', savedConfig.kpis ? savedConfig.kpis.length : 0)
 
-    try {
-      // Python 실행 명령 (가상환경 우선, 없으면 기본 Python)
-      const venvPython = join(process.cwd(), 'venv', 'bin', 'python')
-      const fs = require('fs')
-      let pythonCmd: string
-      
-      // 가상환경의 Python이 존재하면 사용 (Railway 배포 환경)
-      if (fs.existsSync(venvPython)) {
-        pythonCmd = venvPython
-      } else {
-        // 로컬 개발 환경 (Windows/Linux 호환)
-        pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
-      }
-
-      // Python 분석 실행 (환경 변수 포함)
-      const env = {
-        ...process.env,
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-      }
-      
-      // 여러 파일을 처리하도록 Python 스크립트에 전달
-      // 첫 번째 파일 경로와 설정 파일 경로를 전달 (Python 스크립트에서 config에서 모든 파일 정보를 읽음)
-      const { stdout, stderr } = await execAsync(
-        `${pythonCmd} "${pythonScript}" "${filePaths[0]}" "${configPath}"`,
-        { env }
-      )
-
-      // stdout에 디버그 정보가 있으면 로그 출력
-      if (stdout) {
-        console.log('Python stdout:', stdout)
-      }
-
-      if (stderr && !stderr.includes('DeprecationWarning')) {
-        console.error('Python stderr:', stderr)
-      }
-
-      // 결과 JSON 읽기 (파일이 완전히 저장되었는지 확인)
-      const resultsPath = join(tmpDir, 'results.json')
-      
-      // 파일이 존재하고 읽을 수 있을 때까지 대기 (최대 5초)
-      let results: any = null
-      let retryCount = 0
-      const maxRetries = 50 // 5초 (100ms * 50)
-      
-      while (retryCount < maxRetries) {
-        try {
-          if (fs.existsSync(resultsPath)) {
-            const fileContent = fs.readFileSync(resultsPath, 'utf-8')
-            if (fileContent && fileContent.trim().length > 0) {
-              results = JSON.parse(fileContent)
-              // primaryResults가 있고 비어있지 않은지 확인
-              if (results.primaryResults && results.primaryResults.length > 0) {
-                console.log(`결과 파일 확인 완료: ${results.primaryResults.length}개 결과`)
-                break
-              }
-            }
-          }
-        } catch (err) {
-          // 파일이 아직 완전히 저장되지 않았을 수 있음
-          console.log(`결과 파일 읽기 시도 ${retryCount + 1}/${maxRetries}...`)
-        }
-        
-        retryCount++
-        if (retryCount < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 100)) // 100ms 대기
-        }
-      }
-      
-      // 최종적으로 파일 읽기 시도
-      if (!results) {
-        results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
-      }
-      
-      // 결과가 비어있으면 경고
-      const hasResults = 
-        (results.primaryResults && results.primaryResults.length > 0) ||
-        (results.secondaryResults && results.secondaryResults.length > 0) ||
-        (results.additionalResults && results.additionalResults.length > 0)
-      
-      if (!hasResults) {
-        console.warn('경고: 분석 결과가 비어있습니다.')
-        // 에러는 아니지만 사용자에게 알림
-        results.warning = '분석 결과가 없습니다. Excel 파일 형식과 KPI 설정을 확인해주세요.'
-      }
-      
-      // days 값이 포함되어 있는지 확인 (디버깅)
-      if (results.primaryResults && results.primaryResults.length > 0) {
-        const resultsWithDays = results.primaryResults.filter((r: any) => r.days !== undefined && r.days !== null)
-        console.log(`days 값이 포함된 결과: ${resultsWithDays.length}/${results.primaryResults.length}개`)
-        if (resultsWithDays.length > 0) {
-          console.log(`첫 번째 결과의 days 값: ${resultsWithDays[0].days}`)
-        }
-      }
-
-      // Excel 리포트 생성 (모든 결과가 저장된 후)
-      const excelScript = join(process.cwd(), 'python', 'report_excel.py')
-      const { stdout: excelStdout, stderr: excelStderr } = await execAsync(
-        `${pythonCmd} "${excelScript}" "${resultsPath}"`
-      )
-
-      if (excelStderr && !excelStderr.includes('DeprecationWarning')) {
-        console.error('Excel stderr:', excelStderr)
-      }
-
-      // Excel 파일 경로
-      const excelPath = join(tmpDir, 'report.xlsx')
-      
-      // 파일 생성 확인 및 Base64 인코딩
-      let excelBase64: string | null = null
-      try {
-        const fs = require('fs')
-        if (fs.existsSync(excelPath)) {
-          const excelBuffer = fs.readFileSync(excelPath)
-          excelBase64 = excelBuffer.toString('base64')
-          console.log(`Excel file read and encoded: ${excelPath}, size: ${excelBuffer.length} bytes`)
-        } else {
-          console.error(`Excel file not created at: ${excelPath}`)
-          console.error(`Python stdout: ${excelStdout}`)
-        }
-      } catch (err) {
-        console.error('Error reading Excel file:', err)
-      }
-      
-      const excelUrl = excelBase64 ? null : `/api/excel?t=${Date.now()}`
-      
-      // 파싱된 데이터 파일 경로
-      const parsedDataPath = join(tmpDir, 'parsed_data.xlsx')
-      
-      // 파일 생성 확인 및 Base64 인코딩
-      let parsedDataBase64: string | null = null
-      try {
-        const fs = require('fs')
-        if (fs.existsSync(parsedDataPath)) {
-          const parsedDataBuffer = fs.readFileSync(parsedDataPath)
-          parsedDataBase64 = parsedDataBuffer.toString('base64')
-          console.log(`Parsed data file read and encoded: ${parsedDataPath}, size: ${parsedDataBuffer.length} bytes`)
-        } else {
-          console.error(`Parsed data file not found at: ${parsedDataPath}`)
-        }
-      } catch (err) {
-        console.error('Error reading parsed data file:', err)
-      }
-      
-      const parsedDataUrl = parsedDataBase64 ? null : `/api/parsed-data?t=${Date.now()}`
-
-      // 임시 파일 정리 (업로드 파일과 설정 파일만)
-      try {
-        for (const filePath of filePaths) {
-        await unlink(filePath)
-        }
-        await unlink(configPath)
-      } catch (err) {
-        console.error('임시 파일 삭제 실패:', err)
-      }
-            
-            // 결과에 useAI 플래그 추가
-            results.useAI = config.useAI || false
-            
-            return NextResponse.json({
-              results,
-              excelUrl,
-              parsedDataUrl,
-              excelBase64, // Base64 인코딩된 Excel 파일 (서버리스 환경 대응)
-              parsedDataBase64, // Base64 인코딩된 파싱된 데이터 (서버리스 환경 대응)
-            })
-    } catch (error: any) {
-      // 임시 파일 정리
-      try {
-        for (const filePath of filePaths) {
-        await unlink(filePath)
-        }
-        await unlink(configPath)
-      } catch (err) {
-        // 무시
-      }
-
-      console.error('Python 실행 오류:', error)
-      return NextResponse.json(
-        { error: `분석 실패: ${error.message}` },
-        { status: 500 }
-      )
+    const venvPython = join(process.cwd(), 'venv', 'bin', 'python')
+    let pythonCmd: string
+    if (fs.existsSync(venvPython)) {
+      pythonCmd = venvPython
+    } else {
+      pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
     }
+    const env = {
+      ...process.env,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+    }
+    const resultsPath = join(tmpDir, 'results.json')
+    const excelScript = join(process.cwd(), 'python', 'report_excel.py')
+    const excelPath = join(tmpDir, 'report.xlsx')
+    const parsedDataPath = join(tmpDir, 'parsed_data.xlsx')
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn(pythonCmd, [pythonScript, filePaths[0], configPath], { env })
+            let buffer = ''
+            child.stdout?.on('data', (chunk: Buffer) => {
+              buffer += chunk.toString()
+              const parts = buffer.split('\n')
+              buffer = parts.pop() ?? ''
+              for (const line of parts) {
+                const m = line.match(PROGRESS_LINE)
+                if (m) pushProgress(controller, parseInt(m[1], 10), (m[2] || '').trim())
+              }
+            })
+            child.stderr?.on('data', (chunk: Buffer) => {
+              const s = chunk.toString()
+              if (!s.includes('DeprecationWarning')) console.error('Python stderr:', s)
+            })
+            child.on('error', reject)
+            child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`analyze.py exited with ${code}`))))
+          })
+
+          let results: any = null
+          for (let i = 0; i < 50; i++) {
+            try {
+              if (fs.existsSync(resultsPath)) {
+                const content = fs.readFileSync(resultsPath, 'utf-8')
+                if (content?.trim()) {
+                  results = JSON.parse(content)
+                  if (results?.primaryResults?.length) break
+                }
+              }
+            } catch (_) {}
+            await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!results) results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
+          const hasResults =
+            (results.primaryResults?.length > 0) ||
+            (results.secondaryResults?.length > 0) ||
+            (results.additionalResults?.length > 0)
+          if (!hasResults) results.warning = '분석 결과가 없습니다. Excel 파일 형식과 KPI 설정을 확인해주세요.'
+
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn(pythonCmd, [excelScript, resultsPath], { env })
+            let buffer = ''
+            child.stdout?.on('data', (chunk: Buffer) => {
+              buffer += chunk.toString()
+              const parts = buffer.split('\n')
+              buffer = parts.pop() ?? ''
+              for (const line of parts) {
+                const m = line.match(PROGRESS_LINE)
+                if (m) pushProgress(controller, parseInt(m[1], 10), (m[2] || '').trim())
+              }
+            })
+            child.stderr?.on('data', (chunk: Buffer) => {
+              const s = chunk.toString()
+              if (!s.includes('DeprecationWarning')) console.error('Excel stderr:', s)
+            })
+            child.on('error', reject)
+            child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`report_excel.py exited with ${code}`))))
+          })
+
+          let excelBase64: string | null = null
+          let parsedDataBase64: string | null = null
+          if (fs.existsSync(excelPath)) {
+            excelBase64 = fs.readFileSync(excelPath).toString('base64')
+          }
+          if (fs.existsSync(parsedDataPath)) {
+            parsedDataBase64 = fs.readFileSync(parsedDataPath).toString('base64')
+          }
+          results.useAI = config.useAI || false
+          const excelUrl = excelBase64 ? null : `/api/excel?t=${Date.now()}`
+          const parsedDataUrl = parsedDataBase64 ? null : `/api/parsed-data?t=${Date.now()}`
+          controller.enqueue(encoder.encode(JSON.stringify({
+            type: 'done',
+            data: { results, excelUrl, parsedDataUrl, excelBase64, parsedDataBase64 },
+          }) + '\n'))
+
+          try {
+            for (const p of filePaths) await unlink(p)
+            await unlink(configPath)
+          } catch (_) {}
+        } catch (error: any) {
+          controller.enqueue(encoder.encode(JSON.stringify({ type: 'error', error: error?.message || '분석 실패' }) + '\n'))
+          try {
+            for (const p of filePaths) await unlink(p)
+            await unlink(configPath)
+          } catch (_) {}
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    })
   } catch (error: any) {
     console.error('API 오류:', error)
     return NextResponse.json(

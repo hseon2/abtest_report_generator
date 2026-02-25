@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Windows 콘솔 인코딩 설정
 if sys.platform == 'win32':
@@ -19,6 +20,15 @@ if sys.platform == 'win32':
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
     except:
         pass  # 이미 설정되어 있으면 무시
+
+
+def report_progress(pct: int, message: str = ""):
+    """서버 스트리밍용 진행률 출력. Node에서 [PROGRESS]N 패턴으로 파싱."""
+    if message:
+        print(f"[PROGRESS]{pct}|{message}", flush=True)
+    else:
+        print(f"[PROGRESS]{pct}", flush=True)
+
 
 class JSONEncoder(json.JSONEncoder):
     """NaN과 Infinity 값을 null로 변환하는 커스텀 JSON 인코더"""
@@ -1584,6 +1594,17 @@ def generate_insights(primary_results, use_ai=False):
     
     return insights
 
+def _parse_one_file(args):
+    """한 개 파일 파싱 (병렬 실행용). (idx, file_info) -> (idx, file_info, data_df, segment_names, error)."""
+    idx, file_info = args
+    file_path = file_info['path']
+    try:
+        data_df, segment_names, detected_country, is_multi_country, countries = parse_excel(file_path)
+        return (idx, file_info, data_df, segment_names, None)
+    except Exception as e:
+        return (idx, file_info, None, None, e)
+
+
 def calculate_days_from_config(config, country, report_order):
     """config의 files 배열에서 해당 국가와 리포트 순서에 맞는 startDate와 endDate를 찾아서 days 값을 계산
     
@@ -1658,92 +1679,82 @@ def main():
     config_path = sys.argv[2]
     
     # 설정 로드
+    report_progress(5, "설정 로드 중")
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
-    # === 디버깅: Config 로드 직후 ===
-    print(f"\n=== Python: Config 파일 로드 완료 ===")
-    print(f"config.json 파일 경로: {config_path}")
-    print(f"config 키 목록: {list(config.keys())}")
-    print(f"config.get('kpis') 존재 여부: {'kpis' in config}")
-    print(f"config.get('primaryKPIs') 존재 여부: {'primaryKPIs' in config}")
-    if 'kpis' in config:
-        print(f"config['kpis'] 개수: {len(config['kpis'])}")
-        print(f"config['kpis'] 내용: {config['kpis']}")
-    if 'primaryKPIs' in config:
-        print(f"config['primaryKPIs'] 개수: {len(config['primaryKPIs'])}")
-        print(f"config['primaryKPIs'] 내용: {config['primaryKPIs']}")
+    debug = config.get('debug', False)
+    if debug:
+        print(f"\n=== Python: Config 파일 로드 완료 ===")
+        print(f"config.json 파일 경로: {config_path}")
+        print(f"config 키 목록: {list(config.keys())}")
+        print(f"config.get('kpis') 존재 여부: {'kpis' in config}")
+        print(f"config.get('primaryKPIs') 존재 여부: {'primaryKPIs' in config}")
+        if 'kpis' in config:
+            print(f"config['kpis'] 개수: {len(config['kpis'])}")
+            print(f"config['kpis'] 내용: {config['kpis']}")
+        if 'primaryKPIs' in config:
+            print(f"config['primaryKPIs'] 개수: {len(config['primaryKPIs'])}")
+            print(f"config['primaryKPIs'] 내용: {config['primaryKPIs']}")
     
     # 프론트엔드에서 'kpis'로 전달되면 'primaryKPIs'로 매핑
     if 'kpis' in config and 'primaryKPIs' not in config:
-        print(f"[매핑] config['kpis']를 config['primaryKPIs']로 복사합니다.")
         config['primaryKPIs'] = config['kpis']
-        print(f"[매핑 후] config['primaryKPIs'] 개수: {len(config['primaryKPIs'])}")
+        if debug:
+            print(f"[매핑] config['kpis']를 config['primaryKPIs']로 복사, 개수: {len(config['primaryKPIs'])}")
     
     # 여러 파일 처리 여부 확인
     files_config = config.get('files', [])
-    
-    print(f"\n=== 설정 확인 ===")
-    print(f"files_config 존재 여부: {files_config is not None}")
-    print(f"files_config 길이: {len(files_config) if files_config else 0}")
-    if files_config:
-        print(f"files_config 내용: {files_config}")
+    if debug and files_config:
+        print(f"\n=== 설정 확인: files_config {len(files_config)}개 ===")
     
     if files_config and len(files_config) > 0:
-        # 여러 파일 처리
-        print(f"\n=== 여러 파일 처리 시작: 총 {len(files_config)}개 파일 ===")
+        # 여러 파일 처리 (병렬 파싱으로 속도 개선)
+        if debug:
+            print(f"\n=== 여러 파일 처리 시작: 총 {len(files_config)}개 파일 (병렬 파싱) ===")
         all_primary_results = []
         all_parsed_data = []  # 모든 파일의 파싱된 데이터를 저장할 리스트
         first_segment_names = None  # 첫 번째 파일의 segment_names 저장
         
-        for idx, file_info in enumerate(files_config):
-            file_path = file_info['path']
+        report_progress(10, "파일 파싱 중")
+        max_workers = min(6, len(files_config))
+        results_by_idx = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_parse_one_file, (idx, fi)): idx for idx, fi in enumerate(files_config)}
+            for future in as_completed(futures):
+                idx, file_info, data_df, segment_names, err = future.result()
+                results_by_idx[idx] = (file_info, data_df, segment_names, err)
+        
+        report_progress(25, "파일 파싱 완료")
+        # 순서대로 결과 적용
+        for idx in range(len(files_config)):
+            file_info, data_df, segment_names, err = results_by_idx[idx]
             file_country = file_info.get('country', 'UK')
             report_order = file_info.get('reportOrder', '1st report')
-            
-            print(f"\n{'='*60}")
-            print(f"파일 {idx + 1}/{len(files_config)} 처리 중")
-            print(f"파일 경로: {file_path}")
-            print(f"국가: {file_country}, 리포트 순서: {report_order}")
-            print(f"{'='*60}")
-            
-            try:
-                # Excel 파싱
-                data_df, segment_names, detected_country, is_multi_country, countries = parse_excel(file_path)
-                print(f"파싱 완료: {len(data_df)}행, 감지된 국가: {detected_country}, is_multi_country: {is_multi_country}")
-                
-                # 첫 번째 파일의 segment_names 저장 (나중에 재사용)
-                if idx == 0:
-                    first_segment_names = segment_names
-                
-                # 파싱된 데이터에 국가 코드와 리포트 순서 컬럼 추가
-                # 먼저 A열의 이름을 Segment로 변경
-                data_df_with_metadata = data_df.copy()
-                data_df_with_metadata = data_df_with_metadata.rename(columns={'A': 'Segment'})
-                
-                # Report Order와 Country 컬럼을 맨 앞에 추가
-                data_df_with_metadata.insert(0, 'Report Order', report_order)
-                data_df_with_metadata.insert(1, 'Country', file_country)
-                
-                # 모든 파일의 데이터를 리스트에 추가 (열 이름은 나중에 설정)
-                all_parsed_data.append(data_df_with_metadata)
-                
-                # 파일별 결과 처리는 하지 않음 (여러 국가 처리는 나중에 합쳐진 데이터 기준으로 수행)
-                print(f"파일 {idx + 1} 파싱 완료: {len(data_df)}행")
-            except Exception as e:
-                print(f"파일 {idx + 1} 처리 중 오류 발생: {str(e)}")
-                import traceback
-                traceback.print_exc()
+            if err:
+                print(f"파일 {idx + 1} 처리 중 오류 발생: {str(err)}")
+                if debug:
+                    import traceback
+                    traceback.print_exc()
                 continue
+            if idx == 0:
+                first_segment_names = segment_names
+            data_df_with_metadata = data_df.copy()
+            data_df_with_metadata = data_df_with_metadata.rename(columns={'A': 'Segment'})
+            data_df_with_metadata.insert(0, 'Report Order', report_order)
+            data_df_with_metadata.insert(1, 'Country', file_country)
+            all_parsed_data.append(data_df_with_metadata)
+            if debug:
+                print(f"파일 {idx + 1}/{len(files_config)} 파싱 완료: {len(data_df)}행")
         
-        print(f"\n=== 모든 파일 파싱 완료 ===")
-        print(f"총 {len(all_parsed_data)}개 파일 파싱됨")
+        if debug:
+            print(f"\n=== 모든 파일 파싱 완료: 총 {len(all_parsed_data)}개 ===")
         
         # 모든 파일의 파싱된 데이터를 하나로 합치기
         if all_parsed_data:
             combined_data_df = pd.concat(all_parsed_data, ignore_index=True)
-            print(f"\n=== 파싱된 데이터 합치기 ===")
-            print(f"총 {len(combined_data_df)}행 (파일 {len(all_parsed_data)}개)")
+            if debug:
+                print(f"\n=== 파싱된 데이터 합치기: 총 {len(combined_data_df)}행 (파일 {len(all_parsed_data)}개) ===")
             
             # 사용자가 입력한 세그먼트와 Variation 개수로 열 이름 생성
             user_segments = config.get('segments', [])
@@ -1766,8 +1777,6 @@ def main():
             
             # 기존 데이터프레임의 컬럼 수 확인
             existing_cols = list(combined_data_df.columns)
-            print(f"기존 컬럼 수: {len(existing_cols)}, 생성된 열 이름 수: {len(column_names)}")
-            
             # 열 이름이 기존 컬럼 수와 맞지 않으면 조정
             if len(column_names) < len(existing_cols):
                 # 부족한 열은 기존 이름 유지
@@ -1779,9 +1788,8 @@ def main():
             
             # 열 이름 적용
             combined_data_df.columns = column_names[:len(combined_data_df.columns)]
-            
-            print(f"열 이름 설정 완료: {len(combined_data_df.columns)}개 컬럼")
-            print(f"처음 10개 열 이름: {list(combined_data_df.columns[:10])}")
+            if debug:
+                print(f"열 이름 설정 완료: {len(combined_data_df.columns)}개 컬럼")
             
             # 결과 초기화
             all_primary_results = []
@@ -1793,24 +1801,28 @@ def main():
                 unique_countries = combined_data_df['Country'].dropna().unique().tolist()
                 unique_report_orders = combined_data_df['Report Order'].dropna().unique().tolist()
                 
-                print(f"\n=== 파싱된 데이터에서 발견된 리포트 순서와 국가 ===")
-                print(f"고유한 리포트 순서: {unique_report_orders}")
-                print(f"고유한 국가 목록: {unique_countries}")
-                print(f"총 조합 개수: {len(unique_combinations)}")
+                if debug:
+                    print(f"\n=== 파싱된 데이터에서 발견된 리포트 순서와 국가 ===")
+                    print(f"고유한 리포트 순서: {unique_report_orders}")
+                    print(f"고유한 국가 목록: {unique_countries}")
+                    print(f"총 조합 개수: {len(unique_combinations)}")
                 
                 # 세그먼트 이름은 첫 번째 파일에서 저장된 것을 재사용 (중복 호출 제거)
                 segment_names = first_segment_names if first_segment_names is not None else {}
                 
                 # 리포트 순서와 국가 조합별로 결과 생성
                 if len(unique_combinations) > 0:
-                    print(f"\n=== 리포트 순서와 국가 조합별로 분석을 수행합니다 ===")
+                    if debug:
+                        print(f"\n=== 리포트 순서와 국가 조합별로 분석을 수행합니다 ===")
                     
-                    # 각 조합별로 처리
-                    for idx, row in unique_combinations.iterrows():
+                    n_combos = len(unique_combinations)
+                    for step, (idx, row) in enumerate(unique_combinations.iterrows()):
                         report_order = row['Report Order']
                         country = row['Country']
-                        
-                        print(f"\n=== 리포트 순서: {report_order}, 국가: {country} 처리 중 ===")
+                        pct = 25 + int(40 * (step + 1) / n_combos) if n_combos else 65
+                        report_progress(min(pct, 65), "KPI 분석 중")
+                        if debug:
+                            print(f"\n=== 리포트 순서: {report_order}, 국가: {country} 처리 중 ===")
                         
                         # 해당 리포트 순서와 국가의 데이터만 필터링
                         filtered_data = combined_data_df[
@@ -1845,7 +1857,8 @@ def main():
                             is_multi_country = len(unique_countries) > 1
                             
                             # 해당 조합에 대한 결과 생성
-                            print(f"  리포트 순서 {report_order}, 국가 {country}에 대한 결과 생성 중...")
+                            if debug:
+                                print(f"  리포트 순서 {report_order}, 국가 {country}에 대한 결과 생성 중...")
                             country_results = process_single_file(
                                 country_data_original, segment_names, country, is_multi_country, unique_countries,
                                 country, config, report_order
@@ -1859,20 +1872,23 @@ def main():
                                     r['startDate'] = date_info.get('startDate')
                                     r['endDate'] = date_info.get('endDate')
                             
-                            print(f"  KPI: {len(country_results['primary'])}개")
+                            if debug:
+                                print(f"  KPI: {len(country_results['primary'])}개")
                             
                             all_primary_results.extend(country_results['primary'])
                         else:
-                            print(f"  경고: 리포트 순서 {report_order}, 국가 {country}에 대한 데이터가 없습니다.")
+                            if debug:
+                                print(f"  경고: 리포트 순서 {report_order}, 국가 {country}에 대한 데이터가 없습니다.")
                     
-                    print(f"\n=== 모든 리포트 순서와 국가 조합에 대한 결과 생성 완료 ===")
-                    print(f"총 KPI 결과: {len(all_primary_results)}개")
+                    if debug:
+                        print(f"\n=== 모든 리포트 순서와 국가 조합에 대한 결과 생성 완료: 총 KPI {len(all_primary_results)}개 ===")
                     
                     # primary_results 업데이트
                     primary_results = all_primary_results
                 else:
                     # 단일 국가인 경우: 합쳐진 데이터 전체를 사용하여 결과 생성
-                    print(f"단일 국가입니다. 합쳐진 데이터 전체를 사용하여 결과를 생성합니다.")
+                    if debug:
+                        print(f"단일 국가입니다. 합쳐진 데이터 전체를 사용하여 결과를 생성합니다.")
                     
                     # 합쳐진 데이터를 원본 형식으로 변환
                     combined_data_original = combined_data_df.copy()
@@ -1899,7 +1915,8 @@ def main():
                     single_country = unique_countries[0] if unique_countries else 'UK'
                     country_report_order = combined_data_df['Report Order'].iloc[0] if 'Report Order' in combined_data_df.columns else '1st report'
                     
-                    print(f"  국가 {single_country}에 대한 결과 생성 중...")
+                    if debug:
+                        print(f"  국가 {single_country}에 대한 결과 생성 중...")
                     country_results = process_single_file(
                         combined_data_original, segment_names, single_country, False, [single_country],
                         single_country, config, country_report_order
@@ -1913,7 +1930,8 @@ def main():
                             r['startDate'] = date_info.get('startDate')
                             r['endDate'] = date_info.get('endDate')
                     
-                    print(f"  KPI: {len(country_results['primary'])}개")
+                    if debug:
+                        print(f"  KPI: {len(country_results['primary'])}개")
                     all_primary_results.extend(country_results['primary'])
             
             # 합쳐진 데이터를 Excel로 저장
@@ -1923,15 +1941,19 @@ def main():
             tmp_dir.mkdir(exist_ok=True)
             parsed_data_path = tmp_dir / 'parsed_data.xlsx'
             combined_data_df.to_excel(parsed_data_path, index=False, engine='openpyxl')
-            print(f"합쳐진 파싱 데이터 저장 완료: {parsed_data_path}")
+            if debug:
+                print(f"합쳐진 파싱 데이터 저장 완료: {parsed_data_path}")
             
+            report_progress(70, "분석 완료")
             # 결과 저장 및 인사이트 생성
             save_results_and_insights(all_primary_results, config)
         else:
             combined_data_df = None
     else:
         # 단일 파일 처리 (기존 로직)
+        report_progress(15, "파일 파싱 중")
         data_df, segment_names, detected_country, is_multi_country, countries = parse_excel(file_path)
+        report_progress(35, "KPI 분석 중")
         
         # 설정에서 국가 가져오기 (없으면 감지된 국가 사용)
         country = config.get('country', detected_country)
@@ -1942,7 +1964,7 @@ def main():
         )
         
         primary_results = file_results['primary']
-        
+        report_progress(70, "분석 완료")
         # 결과 저장 및 인사이트 생성
         save_results_and_insights(primary_results, config)
     

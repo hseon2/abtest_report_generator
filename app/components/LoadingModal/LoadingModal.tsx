@@ -4,9 +4,14 @@ import React from 'react'
 
 interface LoadingModalProps {
   message?: string
+  progressPercent?: number | null
 }
 
-export function LoadingModal({ message = '처리 중입니다...' }: LoadingModalProps) {
+export function LoadingModal({ message = '처리 중입니다...', progressPercent = null }: LoadingModalProps) {
+  const showProgress = progressPercent != null && progressPercent >= 0
+  const displayPercent = showProgress ? Math.floor(Number(progressPercent)) : 0
+  const displayMessage =
+    progressPercent === 75 ? 'Excel 리포트 생성 중' : progressPercent === 100 ? '완료' : message
   return (
     <>
       <style>{`
@@ -56,8 +61,34 @@ export function LoadingModal({ message = '처리 중입니다...' }: LoadingModa
             margin: 0,
             lineHeight: '1.5',
           }}>
-            {message}
+            {displayMessage}
           </p>
+          {showProgress && (
+            <div style={{ marginTop: '20px' }}>
+              <div style={{
+                height: '8px',
+                backgroundColor: '#ecf0f1',
+                borderRadius: '4px',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, Math.max(0, displayPercent))}%`,
+                  backgroundColor: '#3498db',
+                  borderRadius: '4px',
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <p style={{
+                fontSize: '14px',
+                color: '#7f8c8d',
+                fontWeight: '600',
+                margin: '8px 0 0',
+              }}>
+                {displayPercent}%
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </>

@@ -11,8 +11,43 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.styles.numbers import FORMAT_NUMBER_COMMA_SEPARATED1
+
+# 천단위 콤마, 소수 없이 정수 표시
+FORMAT_INTEGER_COMMA = '#,##0'
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import DataBar, Rule, FormatObject
+from openpyxl.descriptors import String, Bool
+
+# DataBar 확장 옵션(음수 막대·축) 직렬화: openpyxl 기본 클래스에는 없어서 패치
+def _patch_databar_ext():
+    if hasattr(DataBar, "negativeBarColorSameAsPositive"):
+        return
+    attrs_ext = (
+        ("negativeBarColorSameAsPositive", Bool(allow_none=True)),
+        ("negativeBarBorderColorSameAsPositive", Bool(allow_none=True)),
+        ("negativeBarColor", String(allow_none=True)),
+        ("negativeBarBorderColor", String(allow_none=True)),
+        ("axisPosition", String(allow_none=True)),
+        ("axisColor", String(allow_none=True)),
+        ("border", Bool(allow_none=True)),
+    )
+    for name, desc in attrs_ext:
+        desc.name = name
+        setattr(DataBar, name, desc)
+    _orig = getattr(DataBar, "__attrs__", ()) or ()
+    DataBar.__attrs__ = _orig + tuple(n for n, _ in attrs_ext)
+
+
+_patch_databar_ext()
+
+
+def report_progress(pct: int, message: str = ""):
+    """서버 스트리밍용 진행률 출력. Node에서 [PROGRESS]N 패턴으로 파싱."""
+    if message:
+        print(f"[PROGRESS]{pct}|{message}", flush=True)
+    else:
+        print(f"[PROGRESS]{pct}", flush=True)
+
 
 def create_country_report_order_sheet(wb, country, report_order, country_results, date_range=None, days_live=None, test_title=None):
     """
@@ -46,14 +81,41 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
         top=Side(style='thin', color='FFFFFF'),
         bottom=Side(style='thin', color='FFFFFF')
     )
+    # 테이블 연한 회색 테두리
+    light_gray_border = Border(
+        left=Side(style='thin', color='B0B0B0'),
+        right=Side(style='thin', color='B0B0B0'),
+        top=Side(style='thin', color='B0B0B0'),
+        bottom=Side(style='thin', color='B0B0B0')
+    )
+    # Visit 값 열(오른쪽 테두리 없음): C, E, G...
+    visit_col_border = Border(
+        left=Side(style='thin', color='B0B0B0'),
+        right=Side(style='thin', color='FFFFFF'),
+        top=Side(style='thin', color='B0B0B0'),
+        bottom=Side(style='thin', color='B0B0B0')
+    )
+    # 테이블 헤더 Visit/% 색상 RGB(214, 220, 218)
+    header_visit_fill = PatternFill(start_color="D6DCDA", end_color="D6DCDA", fill_type="solid")
+    # 테이블 헤더 Uplift/Conf. 색상 RGB(226, 239, 218)
+    header_uplift_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    # 빈 행 연한 회색 배경
+    empty_row_fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
+    # Confidence 구간별 스타일 (텍스트·배경만, 테두리는 유지)
+    conf_fill_high = PatternFill(start_color="548235", end_color="548235", fill_type="solid")      # >=0.95
+    conf_fill_mid = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")       # >=0.9,<0.95
+    conf_fill_low = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")        # >=0.8,<0.9
+    conf_fill_none = PatternFill(start_color="EDEDED", end_color="EDEDED", fill_type="solid")      # <0.8
+    # Visits 행 폰트 (사이즈 11, 진한 회색, Samsung SS Body KR)
+    font_visits_row = Font(name="Samsung SS Body KR Regular", size=11, color="404040")
     
     # 폰트 정의
     font_body_regular_10 = Font(name="Samsung SS Body KR Regular", size=10, color="000000")
     font_head_bold_18 = Font(name="Samsung SS Head KR Bold", size=18, color="000000", bold=True)
     font_body_regular_9 = Font(name="Samsung SS Body KR Regular", size=9, color="404040")  # 진한 회색
-    # 테이블 폰트 (크기 12, Samsung SS Body KR)
-    font_table = Font(name="Samsung SS Body KR Regular", size=12, color="000000")
-    font_table_bold = Font(name="Samsung SS Body KR Regular", size=12, color="000000", bold=True)
+    # 테이블 폰트 (크기 11, Samsung SS Body KR) - 세그먼트 라벨만 bold
+    font_table = Font(name="Samsung SS Body KR Regular", size=11, color="000000")
+    font_table_bold = Font(name="Samsung SS Body KR Regular", size=11, color="000000", bold=True)
     
     # 행 2: 리포트 순서 (B2) - 앞에 "AUX " 붙이기
     cell = ws['B2']
@@ -292,311 +354,224 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
     
     print(f"DEBUG: 분석 결과 테이블 생성 시작 - KPI 개수: {len(sorted_kpis)}, Variation 개수: {variation_count}")
     
+    def get_table_num_cols(variation_count, is_variation_only, is_simple_type):
+        """테이블 컬럼 수 반환 (Visits 행 병합 범위 등 계산용)"""
+        n = 1  # 세그먼트 열
+        if not is_variation_only:
+            n += 2  # Control Visit, %
+            n += variation_count * 2  # 각 Variation Visit, %
+            n += variation_count * 2  # 각 Variation Uplift, Conf.
+        else:
+            n += variation_count * 2  # 각 Variation Visit, %
+        return n
+    
+    def _traffic_pcts(variation_count):
+        """Control/Variation 트래픽 비율. 1→(50,50), 2→(34,33,33), 3→(25,25,25,25)."""
+        total = variation_count + 1
+        var_pct = 100 // total
+        control_pct = 100 - variation_count * var_pct
+        return control_pct, [var_pct] * variation_count
+    
     # 헤더 생성 함수
-    def create_table_header(ws, row, start_col, variation_count, is_variation_only, is_simple_type):
-        """테이블 헤더 생성 (2행 구조)"""
-        # 첫 번째 헤더 행 (새로운 8행)
+    def create_table_header(ws, row, start_col, variation_count, is_variation_only, is_simple_type, segment_name):
+        """테이블 헤더 생성 (2행 구조). Visits 제외 헤더 볼드, Control/Variation에 트래픽 % 표시."""
         header_row1 = row
-        # 두 번째 헤더 행 (새로운 9행)
         header_row2 = row + 1
         
         col = start_col
+        segment_display = segment_name if segment_name and str(segment_name).strip() else "세그먼트"
+        control_pct, var_pcts = _traffic_pcts(variation_count) if not is_variation_only else (None, [100 // variation_count] * variation_count)
         
         # 세그먼트 컬럼 (두 행 모두 병합)
         header_cell1 = ws.cell(row=header_row1, column=col)
-        header_cell1.value = "세그먼트"
+        header_cell1.value = segment_display
         header_cell1.font = font_table_bold
-        header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-        header_cell1.border = Border(
-            left=Side(style='thin', color='000000'),
-            right=Side(style='thin', color='000000'),
-            top=Side(style='thin', color='000000'),
-            bottom=Side(style='thin', color='000000')
-        )
+        header_cell1.fill = white_fill
+        header_cell1.border = light_gray_border
         header_cell1.alignment = center_alignment
-        # 세그먼트 열 너비 38로 설정 (라벨 열)
-        ws.column_dimensions[get_column_letter(col)].width = 38
-        # 세그먼트 셀 병합 (2행)
+        ws.column_dimensions[get_column_letter(col)].width = 45
         ws.merge_cells(f'{get_column_letter(col)}{header_row1}:{get_column_letter(col)}{header_row2}')
         col += 1
         
         if variation_count > 1:
-            # 여러 Variation인 경우
             if not is_variation_only:
-                # Control - 첫 번째 헤더 행 (C8:D8 병합)
                 control_start_col = col
                 control_end_col = col + 1
                 header_cell1 = ws.cell(row=header_row1, column=control_start_col)
-                header_cell1.value = "Control"
+                header_cell1.value = f"Control ({control_pct}%)"
                 header_cell1.font = font_table_bold
-                header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell1.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell1.fill = header_visit_fill
+                header_cell1.border = light_gray_border
                 header_cell1.alignment = center_alignment
                 ws.merge_cells(f'{get_column_letter(control_start_col)}{header_row1}:{get_column_letter(control_end_col)}{header_row1}')
                 
-                # Control Visit - 두 번째 헤더 행 (C9)
                 header_cell2 = ws.cell(row=header_row2, column=control_start_col)
                 header_cell2.value = "Visit"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_visit_fill
+                header_cell2.border = visit_col_border
                 header_cell2.alignment = center_alignment
                 
-                # Control % - 두 번째 헤더 행 (D9)
                 header_cell2 = ws.cell(row=header_row2, column=control_end_col)
                 header_cell2.value = "%"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_visit_fill
+                header_cell2.border = light_gray_border
                 header_cell2.alignment = center_alignment
                 col = control_end_col + 1
             
-            # Variation 컬럼들
             for i in range(1, variation_count + 1):
-                # Variation - 첫 번째 헤더 행 (2열 병합)
                 var_start_col = col
                 var_end_col = col + 1
+                pct = var_pcts[i - 1] if var_pcts else (100 // variation_count)
                 header_cell1 = ws.cell(row=header_row1, column=var_start_col)
-                header_cell1.value = f"Variation {i}"
+                header_cell1.value = f"Variation{i} ({pct}%)" if variation_count > 1 else f"Variation ({pct}%)"
                 header_cell1.font = font_table_bold
-                header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell1.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell1.fill = header_visit_fill
+                header_cell1.border = light_gray_border
                 header_cell1.alignment = center_alignment
                 ws.merge_cells(f'{get_column_letter(var_start_col)}{header_row1}:{get_column_letter(var_end_col)}{header_row1}')
                 
-                # Variation Visit - 두 번째 헤더 행
                 header_cell2 = ws.cell(row=header_row2, column=var_start_col)
                 header_cell2.value = "Visit"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_visit_fill
+                header_cell2.border = visit_col_border
                 header_cell2.alignment = center_alignment
                 
-                # Variation % - 두 번째 헤더 행
                 header_cell2 = ws.cell(row=header_row2, column=var_end_col)
                 header_cell2.value = "%"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_visit_fill
+                header_cell2.border = light_gray_border
                 header_cell2.alignment = center_alignment
                 col = var_end_col + 1
             
             if not is_variation_only:
-                # Uplift와 Confidence 컬럼들 (각 Variation마다 2열씩)
                 for i in range(1, variation_count + 1):
-                    # 첫 번째 헤더 행: "Variation X (Control 대비)" (2열 병합)
                     uplift_start_col = col
                     uplift_end_col = col + 1
                     header_cell1 = ws.cell(row=header_row1, column=uplift_start_col)
                     header_cell1.value = f"Variation {i} (Control 대비)"
                     header_cell1.font = font_table_bold
-                    header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                    header_cell1.border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
+                    header_cell1.fill = header_uplift_fill
+                    header_cell1.border = light_gray_border
                     header_cell1.alignment = center_alignment
                     ws.merge_cells(f'{get_column_letter(uplift_start_col)}{header_row1}:{get_column_letter(uplift_end_col)}{header_row1}')
                     
-                    # 두 번째 헤더 행: "Uplift" (첫 번째 열)
                     header_cell2 = ws.cell(row=header_row2, column=uplift_start_col)
                     header_cell2.value = "Uplift"
                     header_cell2.font = font_table_bold
-                    header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                    header_cell2.border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
+                    header_cell2.fill = header_uplift_fill
+                    header_cell2.border = light_gray_border
                     header_cell2.alignment = center_alignment
                     
-                    # 두 번째 헤더 행: "Conf." (두 번째 열)
                     header_cell2 = ws.cell(row=header_row2, column=uplift_end_col)
                     header_cell2.value = "Conf."
                     header_cell2.font = font_table_bold
-                    header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                    header_cell2.border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
+                    header_cell2.fill = header_uplift_fill
+                    header_cell2.border = light_gray_border
                     header_cell2.alignment = center_alignment
                     col = uplift_end_col + 1
         else:
-            # 단일 Variation인 경우
             if not is_variation_only:
-                # Control - 첫 번째 헤더 행 (C8:D8 병합)
                 control_start_col = col
                 control_end_col = col + 1
                 header_cell1 = ws.cell(row=header_row1, column=control_start_col)
-                header_cell1.value = "Control"
+                header_cell1.value = f"Control ({control_pct}%)"
                 header_cell1.font = font_table_bold
-                header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell1.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell1.fill = header_visit_fill
+                header_cell1.border = light_gray_border
                 header_cell1.alignment = center_alignment
                 ws.merge_cells(f'{get_column_letter(control_start_col)}{header_row1}:{get_column_letter(control_end_col)}{header_row1}')
                 
-                # Control Visit - 두 번째 헤더 행 (C9)
                 header_cell2 = ws.cell(row=header_row2, column=control_start_col)
                 header_cell2.value = "Visit"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_visit_fill
+                header_cell2.border = visit_col_border
                 header_cell2.alignment = center_alignment
                 
-                # Control % - 두 번째 헤더 행 (D9)
                 header_cell2 = ws.cell(row=header_row2, column=control_end_col)
                 header_cell2.value = "%"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_visit_fill
+                header_cell2.border = light_gray_border
                 header_cell2.alignment = center_alignment
                 col = control_end_col + 1
             
-            # Variation - 첫 번째 헤더 행 (2열 병합)
             var_start_col = col
             var_end_col = col + 1
+            pct = var_pcts[0] if var_pcts else 50
             header_cell1 = ws.cell(row=header_row1, column=var_start_col)
-            header_cell1.value = "Variation"
+            header_cell1.value = f"Variation ({pct}%)"
             header_cell1.font = font_table_bold
-            header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-            header_cell1.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
+            header_cell1.fill = header_visit_fill
+            header_cell1.border = light_gray_border
             header_cell1.alignment = center_alignment
             ws.merge_cells(f'{get_column_letter(var_start_col)}{header_row1}:{get_column_letter(var_end_col)}{header_row1}')
             
-            # Variation Visit - 두 번째 헤더 행
             header_cell2 = ws.cell(row=header_row2, column=var_start_col)
             header_cell2.value = "Visit"
             header_cell2.font = font_table_bold
-            header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-            header_cell2.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
+            header_cell2.fill = header_visit_fill
+            header_cell2.border = visit_col_border
             header_cell2.alignment = center_alignment
             
-            # Variation % - 두 번째 헤더 행
             header_cell2 = ws.cell(row=header_row2, column=var_end_col)
             header_cell2.value = "%"
             header_cell2.font = font_table_bold
-            header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-            header_cell2.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
+            header_cell2.fill = header_visit_fill
+            header_cell2.border = light_gray_border
             header_cell2.alignment = center_alignment
             col = var_end_col + 1
             
             if not is_variation_only:
-                # Uplift와 Confidence 컬럼 (2열)
-                # 첫 번째 헤더 행: "Variation (Control 대비)" (2열 병합)
                 uplift_start_col = col
                 uplift_end_col = col + 1
                 header_cell1 = ws.cell(row=header_row1, column=uplift_start_col)
                 header_cell1.value = "Variation (Control 대비)"
                 header_cell1.font = font_table_bold
-                header_cell1.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell1.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell1.fill = header_uplift_fill
+                header_cell1.border = light_gray_border
                 header_cell1.alignment = center_alignment
                 ws.merge_cells(f'{get_column_letter(uplift_start_col)}{header_row1}:{get_column_letter(uplift_end_col)}{header_row1}')
                 
-                # 두 번째 헤더 행: "Uplift" (첫 번째 열)
                 header_cell2 = ws.cell(row=header_row2, column=uplift_start_col)
                 header_cell2.value = "Uplift"
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_uplift_fill
+                header_cell2.border = light_gray_border
                 header_cell2.alignment = center_alignment
                 
-                # 두 번째 헤더 행: "Conf." (두 번째 열)
                 header_cell2 = ws.cell(row=header_row2, column=uplift_end_col)
                 header_cell2.value = "Conf."
                 header_cell2.font = font_table_bold
-                header_cell2.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-                header_cell2.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                header_cell2.fill = header_uplift_fill
+                header_cell2.border = light_gray_border
                 header_cell2.alignment = center_alignment
                 col = uplift_end_col + 1
         
         return col - start_col  # 컬럼 개수 반환
     
+    def get_confidence_style(confidence_pct):
+        """Confidence 퍼센트(0~100)에 따른 폰트·배경 반환. 테두리는 호출부에서 유지."""
+        if confidence_pct is None:
+            return Font(name="Samsung SS Body KR Regular", size=11, color="A5A5A5", bold=True), conf_fill_none
+        v = float(confidence_pct) / 100.0
+        if v >= 0.95:
+            return Font(name="Samsung SS Body KR Regular", size=11, color="FFFFFF", bold=True), conf_fill_high
+        if v >= 0.9:
+            return Font(name="Samsung SS Body KR Regular", size=11, color="548235", bold=True), conf_fill_mid
+        if v >= 0.8:
+            return Font(name="Samsung SS Body KR Regular", size=11, color="FFC000", bold=True), conf_fill_low
+        return Font(name="Samsung SS Body KR Regular", size=11, color="A5A5A5", bold=True), conf_fill_none
+    
     # 데이터 행 생성 함수 (분모/분자 행 분리)
     def create_data_rows(ws, start_row, start_col, r, variation_count, is_variation_only, is_all_visits, segment_name):
-        """데이터 행 생성 (분모 행과 분자 행)"""
-        row_fill = PatternFill(start_color="F0F8FF", end_color="F0F8FF", fill_type="solid") if is_all_visits else white_fill
-        row_font_weight = 'bold' if is_all_visits else 'normal'
+        """데이터 행 생성 (분모 행과 분자 행). 헤더 제외 테이블 셀 흰색, 세그먼트 라벨만 볼드."""
+        row_fill = white_fill  # 테이블 헤더 제외 셀 색상 흰색 통일 (조건부서식 셀 제외)
+        row_font_weight = 'normal'  # 세그먼트 라벨 제외 볼드 없음
         
         # 분모 행 (첫 번째 행)
         denominator_row = start_row
@@ -629,14 +604,9 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
         segment_cell = ws.cell(row=denominator_row, column=data_col)
         segment_cell.value = denominator_label
         segment_cell.font = font_table_bold
-        segment_cell.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-        segment_cell.border = Border(
-            left=Side(style='medium', color='3498db'),
-            right=Side(style='medium', color='3498db'),
-            top=Side(style='thin', color='000000'),
-            bottom=Side(style='thin', color='000000')
-        )
-        segment_cell.alignment = left_alignment  # 라벨 열은 왼쪽 정렬
+        segment_cell.fill = white_fill
+        segment_cell.border = light_gray_border
+        segment_cell.alignment = left_alignment
         data_col += 1
         
         # 분자 행 (두 번째 행)
@@ -647,160 +617,118 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
         segment_cell = ws.cell(row=numerator_row, column=num_data_col)
         segment_cell.value = numerator_label
         segment_cell.font = font_table_bold
-        segment_cell.fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
-        segment_cell.border = Border(
-            left=Side(style='medium', color='3498db'),
-            right=Side(style='medium', color='3498db'),
-            top=Side(style='thin', color='000000'),
-            bottom=Side(style='thin', color='000000')
-        )
-        segment_cell.alignment = left_alignment  # 라벨 열은 왼쪽 정렬
+        segment_cell.fill = white_fill
+        segment_cell.border = light_gray_border
+        segment_cell.alignment = left_alignment
         num_data_col += 1
         
         if variation_count > 1:
-            # 여러 Variation인 경우
             variations = r.get('variations', [])
             
             if not is_variation_only:
-                # Control 분모 값 (분모 행)
                 control_denom = r.get('denominatorSizeControl')
                 control_denom_cell = ws.cell(row=denominator_row, column=data_col)
                 if control_denom is not None:
                     control_denom_cell.value = int(control_denom)
+                    control_denom_cell.number_format = FORMAT_INTEGER_COMMA
                 else:
                     control_denom_cell.value = "N/A"
-                control_denom_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                control_denom_cell.font = font_table
                 control_denom_cell.fill = row_fill
-                control_denom_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                control_denom_cell.alignment = center_alignment
+                control_denom_cell.border = visit_col_border
+                control_denom_cell.alignment = right_alignment
                 data_col += 1
                 
-                # Control % 열은 분모 행에 비워둠
                 control_pct_denom_cell = ws.cell(row=denominator_row, column=data_col)
                 control_pct_denom_cell.value = ""
-                control_pct_denom_cell.fill = row_fill
-                control_pct_denom_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                control_pct_denom_cell.fill = empty_row_fill
+                control_pct_denom_cell.border = light_gray_border
                 control_pct_denom_cell.alignment = center_alignment
                 data_col += 1
                 
-                # Control 분자 값 (분자 행)
                 control_num = r.get('controlValue')
                 control_num_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if control_num is not None:
                     control_num_cell.value = int(control_num)
+                    control_num_cell.number_format = FORMAT_INTEGER_COMMA
                 else:
                     control_num_cell.value = "N/A"
-                control_num_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                control_num_cell.font = font_table
                 control_num_cell.fill = row_fill
-                control_num_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                control_num_cell.alignment = center_alignment
+                control_num_cell.border = visit_col_border
+                control_num_cell.alignment = right_alignment
                 num_data_col += 1
                 
-                # Control % 값 (분모 대비 분자) - 분자 행에 표시
                 control_pct_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if control_denom is not None and control_num is not None and control_denom > 0:
                     control_pct = (control_num / control_denom) * 100
                     control_pct_cell.value = f"{control_pct:.2f}%"
                 else:
                     control_pct_cell.value = "N/A"
-                control_pct_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                control_pct_cell.font = font_table_bold
                 control_pct_cell.fill = row_fill
-                control_pct_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                control_pct_cell.alignment = center_alignment
+                control_pct_cell.border = light_gray_border
+                control_pct_cell.alignment = right_alignment
                 num_data_col += 1
             
-            # Variation 값들
             for var_num in range(1, variation_count + 1):
                 var_data = next((v for v in variations if v.get('variationNum') == var_num), None)
                 
-                # Variation 분모 값
                 var_denom = var_data.get('denominatorSizeVariation') if var_data else None
                 var_denom_cell = ws.cell(row=denominator_row, column=data_col)
                 if var_denom is not None:
                     var_denom_cell.value = int(var_denom)
+                    var_denom_cell.number_format = FORMAT_INTEGER_COMMA
                 else:
                     var_denom_cell.value = "N/A"
-                    var_denom_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                    var_denom_cell.font = font_table
                 var_denom_cell.fill = row_fill
-                var_denom_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                var_denom_cell.alignment = center_alignment
+                var_denom_cell.border = visit_col_border
+                var_denom_cell.alignment = right_alignment
                 data_col += 1
                 
-                # Variation % 열은 분모 행에 비워둠
                 var_pct_denom_cell = ws.cell(row=denominator_row, column=data_col)
                 var_pct_denom_cell.value = ""
-                var_pct_denom_cell.fill = row_fill
-                var_pct_denom_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                var_pct_denom_cell.fill = empty_row_fill
+                var_pct_denom_cell.border = light_gray_border
                 var_pct_denom_cell.alignment = center_alignment
                 data_col += 1
                 
-                # Variation 분자 값 (분자 행)
                 var_num_val = var_data.get('variationValue') if var_data else None
                 var_num_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if var_num_val is not None:
                     var_num_cell.value = int(var_num_val)
+                    var_num_cell.number_format = FORMAT_INTEGER_COMMA
                 else:
                     var_num_cell.value = "N/A"
-                    var_num_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                    var_num_cell.font = font_table
                 var_num_cell.fill = row_fill
-                var_num_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                var_num_cell.alignment = center_alignment
+                var_num_cell.border = visit_col_border
+                var_num_cell.alignment = right_alignment
                 num_data_col += 1
                 
-                # Variation % 값 (분모 대비 분자) - 분자 행에 표시
                 var_pct_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if var_denom is not None and var_num_val is not None and var_denom > 0:
                     var_pct = (var_num_val / var_denom) * 100
                     var_pct_cell.value = f"{var_pct:.2f}%"
                 else:
                     var_pct_cell.value = "N/A"
-                    var_pct_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                var_pct_cell.font = font_table_bold
                 var_pct_cell.fill = row_fill
-                var_pct_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                var_pct_cell.alignment = center_alignment
+                var_pct_cell.border = light_gray_border
+                var_pct_cell.alignment = right_alignment
                 num_data_col += 1
             
             if not is_variation_only:
+                # 분모 행에서 Uplift/Confidence 열은 빈 칸 → 연한 회색 배경 + 연한 회색 테두리
+                for _ in range(variation_count * 2):
+                    empty_cell = ws.cell(row=denominator_row, column=num_data_col)
+                    empty_cell.value = ""
+                    empty_cell.fill = empty_row_fill
+                    empty_cell.border = light_gray_border
+                    empty_cell.alignment = center_alignment
+                    num_data_col += 1
+                num_data_col -= variation_count * 2  # numerator 쓸 때 다시 사용
                 # Uplift와 Confidence 값들 (분자 행에만, 각 Variation마다 2열씩)
                 for var_num in range(1, variation_count + 1):
                     var_data = next((v for v in variations if v.get('variationNum') == var_num), None)
@@ -812,178 +740,156 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                         # 조건부 서식을 위해 숫자 값으로 저장 (퍼센트를 소수로 변환: 5.23% -> 0.0523)
                         uplift_cell.value = uplift_value / 100.0
                         uplift_cell.number_format = '0.00%'  # 퍼센트 형식으로 표시
-                        uplift_cell.font = Font(name="Samsung SS Body KR Regular", size=12, 
-                                              color="e74c3c" if uplift_value < 0 else "233ffa", 
-                                              bold=row_font_weight == 'bold')
+                        uplift_cell.font = Font(
+                            name="Samsung SS Body KR Regular",
+                            size=11,
+                            bold=True,
+                            color="C00000" if uplift_value < 0 else "233ffa",
+                        )
+                        # Uplift 셀별 데이터 막대 조건부 서식 (음수=빨간 막대, 양수=파란 막대)
+                        uplift_color = "C00000" if uplift_value < 0 else "0070C0"
+                        cfvo = [
+                            FormatObject(type="num", val=-0.5),
+                            FormatObject(type="num", val=0.5),
+                        ]
+                        data_bar = DataBar(
+                            cfvo=cfvo,
+                            color=uplift_color,
+                            showValue=True,
+                            minLength=0,
+                            maxLength=100,
+                        )
+                        rule = Rule(type="dataBar", dataBar=data_bar)
+                        ws.conditional_formatting.add(uplift_cell.coordinate, rule)
                     else:
                         uplift_cell.value = None  # 조건부 서식을 위해 None 또는 0으로 설정
-                        uplift_cell.font = Font(name="Samsung SS Body KR Regular", size=12, color="999999", bold=row_font_weight == 'bold')
+                        uplift_cell.font = Font(
+                            name="Samsung SS Body KR Regular",
+                            size=11,
+                            bold=True,
+                            color="999999",
+                        )
                     uplift_cell.fill = row_fill
-                    uplift_cell.border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
-                    uplift_cell.alignment = right_alignment  # Uplift 셀은 오른쪽 정렬
+                    uplift_cell.border = light_gray_border
+                    uplift_cell.alignment = right_alignment
                     num_data_col += 1
                     
-                    # Confidence 값 (두 번째 열)
+                    # Confidence 값 (두 번째 열) - 구간별 텍스트·배경 조건부 서식
                     conf_cell = ws.cell(row=numerator_row, column=num_data_col)
-                    if var_data and var_data.get('confidence') is not None:
-                        confidence = var_data.get('confidence')
+                    confidence = var_data.get('confidence') if var_data else None
+                    if confidence is not None:
                         conf_cell.value = f"{confidence:.2f}%"
-                        conf_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
                     else:
                         conf_cell.value = "N/A"
-                        conf_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
-                    conf_cell.fill = row_fill
-                    conf_cell.border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
+                    cf_font, cf_fill = get_confidence_style(confidence)
+                    conf_cell.font = cf_font
+                    conf_cell.fill = cf_fill
+                    conf_cell.border = light_gray_border
                     conf_cell.alignment = center_alignment
                     num_data_col += 1
         else:
             # 단일 Variation인 경우
             if not is_variation_only:
-                # Control 분모 값 (분모 행)
                 control_denom = r.get('denominatorSizeControl')
                 control_denom_cell = ws.cell(row=denominator_row, column=data_col)
                 if control_denom is not None:
                     control_denom_cell.value = int(control_denom)
+                    control_denom_cell.number_format = FORMAT_INTEGER_COMMA
                 else:
                     control_denom_cell.value = "N/A"
-                control_denom_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                control_denom_cell.font = font_table
                 control_denom_cell.fill = row_fill
-                control_denom_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                control_denom_cell.alignment = center_alignment
+                control_denom_cell.border = visit_col_border
+                control_denom_cell.alignment = right_alignment
                 data_col += 1
                 
-                # Control % 열은 분모 행에 비워둠
                 control_pct_denom_cell = ws.cell(row=denominator_row, column=data_col)
                 control_pct_denom_cell.value = ""
-                control_pct_denom_cell.fill = row_fill
-                control_pct_denom_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                control_pct_denom_cell.fill = empty_row_fill
+                control_pct_denom_cell.border = light_gray_border
                 control_pct_denom_cell.alignment = center_alignment
                 data_col += 1
                 
-                # Control 분자 값 (분자 행)
                 control_num = r.get('controlValue')
                 control_num_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if control_num is not None:
                     control_num_cell.value = int(control_num)
+                    control_num_cell.number_format = FORMAT_INTEGER_COMMA
                 else:
                     control_num_cell.value = "N/A"
-                control_num_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                control_num_cell.font = font_table
                 control_num_cell.fill = row_fill
-                control_num_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                control_num_cell.alignment = center_alignment
+                control_num_cell.border = visit_col_border
+                control_num_cell.alignment = right_alignment
                 num_data_col += 1
                 
-                # Control % 값 (분모 대비 분자) - 분자 행에 표시
                 control_pct_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if control_denom is not None and control_num is not None and control_denom > 0:
                     control_pct = (control_num / control_denom) * 100
                     control_pct_cell.value = f"{control_pct:.2f}%"
                 else:
                     control_pct_cell.value = "N/A"
-                control_pct_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+                control_pct_cell.font = font_table_bold
                 control_pct_cell.fill = row_fill
-                control_pct_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-                control_pct_cell.alignment = center_alignment
+                control_pct_cell.border = light_gray_border
+                control_pct_cell.alignment = right_alignment
                 num_data_col += 1
             
-            # Variation 분모 값 (분모 행)
             var_denom = r.get('denominatorSizeVariation')
             var_denom_cell = ws.cell(row=denominator_row, column=data_col)
             if var_denom is not None:
                 var_denom_cell.value = int(var_denom)
+                var_denom_cell.number_format = FORMAT_INTEGER_COMMA
             else:
                 var_denom_cell.value = "N/A"
-            var_denom_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+            var_denom_cell.font = font_table
             var_denom_cell.fill = row_fill
-            var_denom_cell.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
-            var_denom_cell.alignment = center_alignment
+            var_denom_cell.border = visit_col_border
+            var_denom_cell.alignment = right_alignment
             data_col += 1
             
-            # Variation % 열은 분모 행에 비워둠
             var_pct_denom_cell = ws.cell(row=denominator_row, column=data_col)
             var_pct_denom_cell.value = ""
-            var_pct_denom_cell.fill = row_fill
-            var_pct_denom_cell.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
+            var_pct_denom_cell.fill = empty_row_fill
+            var_pct_denom_cell.border = light_gray_border
             var_pct_denom_cell.alignment = center_alignment
             data_col += 1
             
-            # Variation 분자 값 (분자 행)
             var_num_val = r.get('variationValue')
             var_num_cell = ws.cell(row=numerator_row, column=num_data_col)
             if var_num_val is not None:
                 var_num_cell.value = int(var_num_val)
+                var_num_cell.number_format = FORMAT_INTEGER_COMMA
             else:
                 var_num_cell.value = "N/A"
-            var_num_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+            var_num_cell.font = font_table
             var_num_cell.fill = row_fill
-            var_num_cell.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
-            var_num_cell.alignment = center_alignment
+            var_num_cell.border = visit_col_border
+            var_num_cell.alignment = right_alignment
             num_data_col += 1
             
-            # Variation % 값 (분모 대비 분자) - 분자 행에 표시
             var_pct_cell = ws.cell(row=numerator_row, column=num_data_col)
             if var_denom is not None and var_num_val is not None and var_denom > 0:
                 var_pct = (var_num_val / var_denom) * 100
                 var_pct_cell.value = f"{var_pct:.2f}%"
             else:
                 var_pct_cell.value = "N/A"
-            var_pct_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
+            var_pct_cell.font = font_table_bold
             var_pct_cell.fill = row_fill
-            var_pct_cell.border = Border(
-                left=Side(style='thin', color='000000'),
-                right=Side(style='thin', color='000000'),
-                top=Side(style='thin', color='000000'),
-                bottom=Side(style='thin', color='000000')
-            )
-            var_pct_cell.alignment = center_alignment
+            var_pct_cell.border = light_gray_border
+            var_pct_cell.alignment = right_alignment
             num_data_col += 1
             
             if not is_variation_only:
+                # 분모 행에서 Uplift/Confidence 열(2열) 빈 칸 → 연한 회색
+                for _ in range(2):
+                    empty_cell = ws.cell(row=denominator_row, column=num_data_col)
+                    empty_cell.value = ""
+                    empty_cell.fill = empty_row_fill
+                    empty_cell.border = light_gray_border
+                    empty_cell.alignment = center_alignment
+                    num_data_col += 1
+                num_data_col -= 2
                 # Uplift 값 (분자 행에만, 첫 번째 열)
                 uplift_cell = ws.cell(row=numerator_row, column=num_data_col)
                 if r.get('uplift') is not None:
@@ -991,45 +897,62 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                     # 조건부 서식을 위해 숫자 값으로 저장 (퍼센트를 소수로 변환: 5.23% -> 0.0523)
                     uplift_cell.value = uplift_value / 100.0
                     uplift_cell.number_format = '0.00%'  # 퍼센트 형식으로 표시
-                    uplift_cell.font = Font(name="Samsung SS Body KR Regular", size=12, 
-                                          color="e74c3c" if uplift_value < 0 else "233ffa", 
-                                          bold=row_font_weight == 'bold')
+                    uplift_cell.font = Font(
+                        name="Samsung SS Body KR Regular",
+                        size=11,
+                        bold=True,
+                        color="C00000" if uplift_value < 0 else "233ffa",
+                    )
+                    # Uplift 셀별 데이터 막대 조건부 서식 (음수=빨간 막대, 양수=파란 막대)
+                    uplift_color = "C00000" if uplift_value < 0 else "0070C0"
+                    cfvo = [
+                        FormatObject(type="num", val=-0.5),
+                        FormatObject(type="num", val=0.5),
+                    ]
+                    data_bar = DataBar(
+                        cfvo=cfvo,
+                        color=uplift_color,
+                        showValue=True,
+                        minLength=0,
+                        maxLength=100,
+                    )
+                    rule = Rule(type="dataBar", dataBar=data_bar)
+                    ws.conditional_formatting.add(uplift_cell.coordinate, rule)
                 else:
                     uplift_cell.value = None  # 조건부 서식을 위해 None 또는 0으로 설정
-                    uplift_cell.font = Font(name="Samsung SS Body KR Regular", size=12, color="999999", bold=row_font_weight == 'bold')
+                    uplift_cell.font = Font(
+                        name="Samsung SS Body KR Regular",
+                        size=11,
+                        bold=True,
+                        color="999999",
+                    )
                 uplift_cell.fill = row_fill
-                uplift_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                uplift_cell.border = light_gray_border
                 uplift_cell.alignment = right_alignment  # Uplift 셀은 오른쪽 정렬
                 num_data_col += 1
                 
-                # Confidence 값 (분자 행에만, 두 번째 열)
+                # Confidence 값 (분자 행에만, 두 번째 열) - 구간별 텍스트·배경 조건부 서식
                 conf_cell = ws.cell(row=numerator_row, column=num_data_col)
-                if r.get('confidence') is not None:
-                    confidence = r.get('confidence')
+                confidence = r.get('confidence')
+                if confidence is not None:
                     conf_cell.value = f"{confidence:.2f}%"
-                    conf_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
                 else:
                     conf_cell.value = "N/A"
-                    conf_cell.font = font_table_bold if row_font_weight == 'bold' else font_table
-                conf_cell.fill = row_fill
-                conf_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                cf_font, cf_fill = get_confidence_style(confidence)
+                conf_cell.font = cf_font
+                conf_cell.fill = cf_fill
+                conf_cell.border = light_gray_border
                 conf_cell.alignment = center_alignment
                 num_data_col += 1
         
         return max(data_col, num_data_col) - start_col  # 컬럼 개수 반환
     
     # 각 KPI별로 테이블 생성
-    for kpi_name, kpi_results in sorted_kpis:
+    for kpi_idx, (kpi_name, kpi_results) in enumerate(sorted_kpis):
+        # KPI 2개 이상일 때 두 번째 KPI부터 행 하나 더 건너뛰기
+        if kpi_idx >= 1:
+            current_row += 1
+        
         first_result = kpi_results[0]
         kpi_category = first_result.get('category', 'primary')
         category_label = {'primary': '[Primary KPI]', 'secondary': '[Secondary KPI]', 'additional': '[Additional Data]'}.get(kpi_category, '')
@@ -1038,7 +961,7 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                            (first_result.get('variationValue') is not None or (first_result.get('variations') and len(first_result.get('variations', [])) > 0))
         is_simple_type = first_result.get('controlRate') is None and first_result.get('controlValue') is not None
         
-        # KPI 제목 행 (B7)
+        # KPI 제목 행
         title_cell = ws.cell(row=current_row, column=2)
         title_cell.value = f"{category_label} {kpi_name}" if category_label else kpi_name
         # 폰트: Samsung SS Head KR Bold, 사이즈 12, RGB(68, 114, 196)
@@ -1085,12 +1008,7 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                 error_cell.value = f"⚠️ {first_segment_results[0].get('errorMessage')}"
                 error_cell.font = font_table_bold
                 error_cell.fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
-                error_cell.border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
+                error_cell.border = light_gray_border
                 error_cell.alignment = center_alignment
                 # 에러 메시지가 여러 컬럼에 걸치도록 병합 (대략적인 너비)
                 estimated_cols = 10
@@ -1099,11 +1017,26 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                 data_start_row = header_row
                 data_end_row = current_row - 1
             else:
-                # 헤더 생성 (2행 구조)
-                num_cols = create_table_header(ws, header_row, start_col, variation_count, is_variation_only, is_simple_type)
+                # 8행 위에 행 추가: 새 8행에 "Visits" (C8~테이블 끝 병합)
+                visits_row = current_row
+                header_row = current_row + 1
+                num_cols = get_table_num_cols(variation_count, is_variation_only, is_simple_type)
+                end_col = start_col + num_cols - 1
+                visits_start = get_column_letter(start_col + 1)
+                visits_end = get_column_letter(end_col)
+                ws.merge_cells(f'{visits_start}{visits_row}:{visits_end}{visits_row}')
+                visits_cell = ws.cell(row=visits_row, column=start_col + 1)
+                visits_cell.value = "Visits"
+                visits_cell.font = font_visits_row
+                visits_cell.fill = white_fill
+                visits_cell.alignment = center_alignment
+                for c in range(start_col + 1, end_col + 1):
+                    ws.cell(row=visits_row, column=c).border = light_gray_border
+                # 헤더 생성 (2행 구조) - 9행·10행
+                num_cols = create_table_header(ws, header_row, start_col, variation_count, is_variation_only, is_simple_type, first_segment_name)
                 table_start_col = start_col
                 table_end_col = start_col + num_cols - 1
-                current_row += 2  # 헤더가 2행이므로 2 증가
+                current_row += 3  # Visits(1) + 헤더 2행
                 
                 # 데이터 행들 (분모/분자 행으로 분리)
                 data_start_row = current_row
@@ -1113,8 +1046,8 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                     current_row += 2  # 분모 행과 분자 행 두 행 사용
                 data_end_row = current_row - 1
                 
-                # 테이블 영역 기록
-                table_ranges.append((header_row, data_end_row, table_start_col, table_end_col))
+                # 테이블 영역 기록 (Visits 행 포함: header_row - 1부터)
+                table_ranges.append((header_row - 1, data_end_row, table_start_col, table_end_col))
                 
                 # 다음 세그먼트들을 오른쪽에 배치
                 if len(sorted_segments) > 1:
@@ -1127,20 +1060,27 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                             error_cell.value = f"⚠️ {segment_results[0].get('errorMessage')}"
                             error_cell.font = font_table_bold
                             error_cell.fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
-                            error_cell.border = Border(
-                                left=Side(style='thin', color='000000'),
-                                right=Side(style='thin', color='000000'),
-                                top=Side(style='thin', color='000000'),
-                                bottom=Side(style='thin', color='000000')
-                            )
+                            error_cell.border = light_gray_border
                             error_cell.alignment = center_alignment
                             estimated_cols = 10
                             ws.merge_cells(f'{get_column_letter(next_col)}{header_row}:{get_column_letter(next_col + estimated_cols - 1)}{header_row}')
                             next_col += estimated_cols + 1
                         else:
+                            # Visits 행 (해당 세그먼트 테이블 영역)
+                            seg_visits_row = header_row - 1
+                            seg_num_cols = get_table_num_cols(variation_count, is_variation_only, is_simple_type)
+                            seg_end_col = next_col + seg_num_cols - 1
+                            ws.merge_cells(f'{get_column_letter(next_col + 1)}{seg_visits_row}:{get_column_letter(seg_end_col)}{seg_visits_row}')
+                            seg_visits_cell = ws.cell(row=seg_visits_row, column=next_col + 1)
+                            seg_visits_cell.value = "Visits"
+                            seg_visits_cell.font = font_visits_row
+                            seg_visits_cell.fill = white_fill
+                            seg_visits_cell.alignment = center_alignment
+                            for c in range(next_col + 1, seg_end_col + 1):
+                                ws.cell(row=seg_visits_row, column=c).border = light_gray_border
                             # 헤더 생성
                             seg_header_row = header_row
-                            seg_num_cols = create_table_header(ws, seg_header_row, next_col, variation_count, is_variation_only, is_simple_type)
+                            seg_num_cols = create_table_header(ws, seg_header_row, next_col, variation_count, is_variation_only, is_simple_type, segment_name)
                             seg_table_start_col = next_col
                             seg_table_end_col = next_col + seg_num_cols - 1
                             
@@ -1157,71 +1097,46 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                                     seg_data_row += 2  # 분모 행과 분자 행 두 행 사용
                                     data_end_row = seg_data_row - 1
                             
-                            # 테이블 영역 기록
-                            table_ranges.append((seg_header_row, data_end_row, seg_table_start_col, seg_table_end_col))
+                            # 테이블 영역 기록 (Visits 행 포함)
+                            table_ranges.append((seg_header_row - 1, data_end_row, seg_table_start_col, seg_table_end_col))
                             
                             next_col = seg_table_end_col + 2  # 한 열 간격
         
         # KPI 사이 간격
         current_row = max(current_row, data_end_row + 2) if len(sorted_segments) > 0 else current_row + 1
     
-    # Daily visit 계산 (테이블 생성 후 C10, E10, G10 등의 실제 셀 값 사용)
-    # 첫 번째 KPI의 첫 번째 세그먼트 테이블에서 분모 행(10행)의 셀 값을 읽어서 계산
+    # Daily visit 계산 (테이블 생성 후 첫 테이블 분모 행의 Visit 셀 값 사용)
+    # 테이블 구조: Visits(8행), 헤더(9·10행), 분모 행(11행), 분자 행(12행)...
     print(f"DEBUG: Daily visit 계산 시작 (테이블 생성 후 셀 값 읽기)...")
     daily_visit_value = None
+    denom_row = table_ranges[0][0] + 3 if table_ranges else 11  # 첫 테이블 분모 행
     
-    # 첫 번째 KPI의 첫 번째 세그먼트 테이블 찾기
-    if len(sorted_kpis) > 0:
+    if len(sorted_kpis) > 0 and table_ranges:
         first_kpi_name, first_kpi_results = sorted_kpis[0]
-        # "Visits" 관련 KPI 찾기
         for r in first_kpi_results:
             kpi_name = str(r.get('kpiName', '')).lower()
             device = r.get('device', 'All')
             
             if 'visit' in kpi_name and (device == 'All' or device == '' or device is None):
-                # 테이블의 분모 행(10행)에서 실제 셀 값 읽기
-                # C10: Control Visit (분모), E10: Variation 1 Visit (분모), G10: Variation 2 Visit (분모)...
                 total_visits = 0
-                
-                # Control Visit (C10) - 분모 행
+                # Control Visit (C열) - 분모 행
                 try:
-                    c10_value = ws['C10'].value
-                    if c10_value is not None:
-                        c10_num = float(c10_value) if isinstance(c10_value, (int, float, str)) and str(c10_value).replace(',', '').replace('.', '').isdigit() else 0
-                        total_visits += c10_num
-                        print(f"DEBUG: C10 (Control) 값: {c10_value} -> {c10_num}, 총합: {total_visits}")
-                except:
-                    print(f"DEBUG: C10 셀 읽기 실패")
-                
-                # Variation Visits
-                # Variation이 1개인 경우: E10
-                # Variation이 2개 이상인 경우: E10, G10, ...
-                variation_cols = ['E', 'G', 'I', 'K', 'M', 'O', 'Q', 'S', 'U', 'W', 'Y', 'AA', 'AC', 'AE', 'AG', 'AI', 'AK', 'AM', 'AO', 'AQ', 'AS']
-                
-                if variation_count == 1:
-                    # Variation이 1개인 경우: E10
+                    c_val = ws.cell(row=denom_row, column=3).value
+                    if c_val is not None:
+                        c_num = float(c_val) if isinstance(c_val, (int, float, str)) and str(c_val).replace(',', '').replace('.', '').isdigit() else 0
+                        total_visits += c_num
+                except Exception:
+                    pass
+                # Variation Visits: E(5), G(7), I(9)...
+                variation_col_indices = [5 + i * 2 for i in range(variation_count)]
+                for col_idx in variation_col_indices:
                     try:
-                        e10_value = ws['E10'].value
-                        if e10_value is not None:
-                            e10_num = float(e10_value) if isinstance(e10_value, (int, float, str)) and str(e10_value).replace(',', '').replace('.', '').isdigit() else 0
-                            total_visits += e10_num
-                            print(f"DEBUG: E10 (Variation 1) 값: {e10_value} -> {e10_num}, 총합: {total_visits}")
-                    except:
-                        print(f"DEBUG: E10 셀 읽기 실패")
-                else:
-                    # Variation이 2개 이상인 경우: E10, G10, ...
-                    for i in range(variation_count):
-                        if i < len(variation_cols):
-                            col_letter = variation_cols[i]
-                            cell_address = f"{col_letter}10"
-                            try:
-                                cell_value = ws[cell_address].value
-                                if cell_value is not None:
-                                    cell_num = float(cell_value) if isinstance(cell_value, (int, float, str)) and str(cell_value).replace(',', '').replace('.', '').isdigit() else 0
-                                    total_visits += cell_num
-                                    print(f"DEBUG: {cell_address} (Variation {i+1}) 값: {cell_value} -> {cell_num}, 총합: {total_visits}")
-                            except:
-                                print(f"DEBUG: {cell_address} 셀 읽기 실패")
+                        cell_val = ws.cell(row=denom_row, column=col_idx).value
+                        if cell_val is not None:
+                            n = float(cell_val) if isinstance(cell_val, (int, float, str)) and str(cell_val).replace(',', '').replace('.', '').isdigit() else 0
+                            total_visits += n
+                    except Exception:
+                        pass
                 
                 # Daily visit = 전체 Visit 합산 / 테스트 일수 (소숫점 첫째 자리에서 반올림)
                 if days_live_value and isinstance(days_live_value, (int, float)) and days_live_value > 0 and total_visits > 0:
@@ -1234,7 +1149,7 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
     # G5 셀에 Daily visit 값 설정
     if daily_visit_value is not None:
         ws['G5'] = daily_visit_value
-        ws['G5'].number_format = FORMAT_NUMBER_COMMA_SEPARATED1  # 천단위 구분
+        ws['G5'].number_format = FORMAT_INTEGER_COMMA  # 천단위 구분
         print(f"DEBUG: G5 셀에 {daily_visit_value} 설정됨")
     else:
         print(f"DEBUG: G5 셀에 N/A 유지 (daily_visit_value={daily_visit_value})")
@@ -1258,26 +1173,35 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                 if cell.fill.start_color.rgb == '00000000' or cell.fill.start_color.rgb == 'FFFFFFFF':
                     cell.fill = white_fill
     
-    # 열 너비 설정
-    ws.column_dimensions['A'].width = 7
-    
-    # 라벨 열(B, D, N 등) 너비 38로 설정
-    # 각 세그먼트 테이블의 시작 열(B열)을 38로 설정
-    label_cols = set()  # 라벨 열 추적
+    # 테이블 내 값이 안 들어가 있는 행은 연한 회색 배경
     for table_start_row, table_end_row, table_start_col, table_end_col in table_ranges:
-        # 각 테이블의 시작 열(B열)이 라벨 열
+        data_start = table_start_row + 3  # Visits(1) + 헤더 2행
+        for row in range(data_start, table_end_row + 1):
+            empty = True
+            for col in range(table_start_col, table_end_col + 1):
+                cell = ws.cell(row=row, column=col)
+                if cell.value is not None and str(cell.value).strip() != '':
+                    empty = False
+                    break
+            if empty:
+                for col in range(table_start_col, table_end_col + 1):
+                    ws.cell(row=row, column=col).fill = empty_row_fill
+    
+    # 열 너비 설정: A=10, 세그먼트 라벨 열=45, 나머지=19
+    ws.column_dimensions['A'].width = 5
+    
+    label_cols = set()
+    for table_start_row, table_end_row, table_start_col, table_end_col in table_ranges:
         label_cols.add(table_start_col)
     
-    # 라벨 열 너비 38로 설정
     for label_col in label_cols:
         col_letter = get_column_letter(label_col)
-        ws.column_dimensions[col_letter].width = 38
+        ws.column_dimensions[col_letter].width = 45
     
-    # 나머지 열 너비 19로 설정
-    for col in range(1, 47):  # A=1, AT=46
-        if col not in label_cols:  # 라벨 열이 아닌 경우
+    for col in range(1, 47):
+        if col not in label_cols:
             col_letter = get_column_letter(col)
-            if col_letter not in ws.column_dimensions or ws.column_dimensions[col_letter].width != 38:
+            if col_letter not in ws.column_dimensions or ws.column_dimensions[col_letter].width != 45:
                 ws.column_dimensions[col_letter].width = 19
     
     # Uplift 셀에 조건부 서식 적용
@@ -1287,25 +1211,18 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
     uplift_ranges = []  # Uplift 셀 범위 저장 (중복 방지를 위해 set 사용)
     uplift_cols_found = set()  # 이미 찾은 (table_start_row, col) 조합 저장
     for table_start_row, table_end_row, table_start_col, table_end_col in table_ranges:
-        # 테이블 내에서 Uplift 셀 위치 찾기 (헤더에서 "Uplift" 찾기)
-        # 헤더 행은 table_start_row, table_start_row+1
-        # 데이터 행은 table_start_row+2부터 시작 (분모 행)
-        # 분자 행은 table_start_row+3부터 시작 (홀수 행)
+        # 테이블: Visits=table_start_row, 헤더=table_start_row+1, table_start_row+2, 데이터=table_start_row+3부터
         # Uplift 컬럼은 헤더에서 "Uplift" 텍스트로 찾기
-        for header_row in [table_start_row, table_start_row + 1]:
+        for header_row in [table_start_row + 1, table_start_row + 2]:
             for col in range(table_start_col, table_end_col + 1):
-                # 이미 찾은 열인지 확인 (같은 테이블 내에서 중복 방지)
                 if (table_start_row, col) in uplift_cols_found:
                     continue
                     
                 cell = ws.cell(row=header_row, column=col)
                 if cell.value and 'Uplift' in str(cell.value):
-                    # 이 열이 Uplift 열임
-                    # 데이터 행 범위 찾기 (분자 행만: table_start_row+3부터 table_end_row까지, 2행 간격)
-                    data_start = table_start_row + 2  # 첫 번째 분모 행
-                    # 분자 행만 선택 (홀수 행: data_start+1, data_start+3, ...)
+                    data_start = table_start_row + 3  # 첫 번째 분모 행
                     numerator_rows = []
-                    for row in range(data_start + 1, table_end_row + 1, 2):  # 2행 간격으로 분자 행만
+                    for row in range(data_start + 1, table_end_row + 1, 2):
                         numerator_rows.append(row)
                     
                     if numerator_rows:
@@ -1316,58 +1233,11 @@ def create_country_report_order_sheet(wb, country, report_order, country_results
                         uplift_cols_found.add((table_start_row, col))  # 찾은 열 기록
                         print(f"DEBUG: Uplift 열 발견 - 테이블 시작 행: {table_start_row}, 열: {get_column_letter(col)}, 분자 행 범위: {first_numerator_row}~{last_numerator_row}")
     
-    # Uplift 셀에 조건부 서식 적용
-    for data_start_row, data_end_row, uplift_col in uplift_ranges:
-        # Uplift 셀 범위 (분자 행만)
-        uplift_range = f"{get_column_letter(uplift_col)}{data_start_row}:{get_column_letter(uplift_col)}{data_end_row}"
-
-        # Uplift 셀은 이미 숫자 값으로 저장되어 있으므로 변환 불필요
-
-        # 데이터 막대 조건부 서식 생성
-        # 최소값 -0.5, 최대값 0.5 (즉, -50% ~ 50%)
-        cfvo = [
-            FormatObject(type="num", val=-0.5),
-            FormatObject(type="num", val=0.5),
-        ]
-
-        # DataBar 기본 설정 (생성자에는 안전한 인자만 사용)
-        data_bar = DataBar(
-            cfvo=cfvo,
-            color="0070C0",  # 양수 막대 색: RGB(0,112,192)
-            showValue=True,
-            minLength=0,
-            maxLength=100,
-        )
-
-        # 가능한 경우에만 추가 속성 적용 (openpyxl 버전별 호환성 고려)
-        # 음수 막대 색 / 테두리 색
-        if hasattr(data_bar, "negativeBarColorSameAsPositive"):
-            data_bar.negativeBarColorSameAsPositive = False
-        if hasattr(data_bar, "negativeBarBorderColorSameAsPositive"):
-            data_bar.negativeBarBorderColorSameAsPositive = False
-        if hasattr(data_bar, "negativeBarColor"):
-            data_bar.negativeBarColor = "C00000"  # RGB(192,0,0)
-        if hasattr(data_bar, "negativeBarBorderColor"):
-            data_bar.negativeBarBorderColor = "C00000"  # RGB(192,0,0)
-
-        # 테두리
-        if hasattr(data_bar, "border"):
-            data_bar.border = True
-
-        # 축 설정: 셀 중간, 축 색상
-        if hasattr(data_bar, "axisPosition"):
-            data_bar.axisPosition = "cellMid"
-        if hasattr(data_bar, "axisColor"):
-            data_bar.axisColor = "A5A5A5"  # RGB(165,165,165)
-
-        rule = Rule(type="dataBar", dataBar=data_bar)
-
-        # 조건부 서식 적용
-        ws.conditional_formatting.add(uplift_range, rule)
-        print(f"DEBUG: Uplift 조건부 서식 적용 - 범위: {uplift_range}")
+    # Uplift 셀 조건부 서식은 create_data_rows에서 셀 단위 데이터 막대로 처리함
 
 def create_excel_report(results_path):
     """Excel 리포트 생성 (국가별/리포트 순서별 시트 분리)"""
+    report_progress(75, "Excel creating")
     print(f"\n{'='*60}")
     print(f"DEBUG: Excel 리포트 생성 시작")
     print(f"DEBUG: results_path={results_path}")
@@ -1476,6 +1346,7 @@ def create_excel_report(results_path):
     print(f"DEBUG: 생성된 시트 목록: {wb.sheetnames}")
     print(f"DEBUG: 총 시트 개수: {len(wb.sheetnames)}")
     
+    report_progress(100, "Done")
     print(f"Excel report saved to {excel_path}")
     print(f"{'='*60}\n")
 

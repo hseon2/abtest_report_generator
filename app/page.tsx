@@ -44,6 +44,7 @@ export default function Home() {
   const {
     loading,
     loadingMessage,
+    progressPercent,
     results,
     error,
     excelUrl,
@@ -398,7 +399,7 @@ export default function Home() {
       
       {/* 분석 중 로딩 모달 */}
       {loading && (
-        <LoadingModal message={loadingMessage || "📊 데이터 분석 중입니다..."} />
+        <LoadingModal message={loadingMessage || "📊 데이터 분석 중입니다..."} progressPercent={progressPercent} />
       )}
     </div>
   )
