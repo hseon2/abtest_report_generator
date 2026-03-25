@@ -60,6 +60,67 @@ class JSONEncoder(json.JSONEncoder):
             return None
         return value
 
+# =============================
+# Bayesian 사후확률 계산 (Beta-분포 Monte Carlo)
+# =============================
+_BAYESIAN_RNG = np.random.default_rng(42)
+_N_SIMS = 50_000
+_UPLIFT_TH = 0.03
+_PRIOR_A = 1.0
+_PRIOR_B = 1.0
+_EPS = 1e-12
+_MIN_EVENTS = 60       # 분자(numerator) 최소 모수
+_TH_STRONG = 0.90
+_TH_SOFT = 0.80
+
+_BAYESIAN_NONE = (None, None, None, None, None, None)
+_BAYESIAN_INSUFF = (None, None, None, None, None, '모수부족 (60건 미만)')
+
+
+def _assign_bayesian_decision(p_gt3, p_lt3):
+    if p_gt3 >= _TH_STRONG:
+        return 'Strong Variation Winner'
+    if p_lt3 >= _TH_STRONG:
+        return 'Strong Control Winner'
+    if p_gt3 >= _TH_SOFT:
+        return 'Soft Variation Winner'
+    if p_lt3 >= _TH_SOFT:
+        return 'Soft Control Winner'
+    return 'No Clear Direction'
+
+
+def compute_bayesian_probs(cd, cn, vd, vn):
+    """Beta 사후분포 Monte Carlo로 uplift 확률 계산.
+
+    cd: control denominator, cn: control numerator (분자)
+    vd: variation denominator, vn: variation numerator (분자)
+    분자가 각각 60 미만이면 decision만 '모수부족 (60건 미만)'으로 반환.
+    반환: (p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision)
+    """
+    try:
+        cd, cn, vd, vn = float(cd), float(cn), float(vd), float(vn)
+        if cn < _MIN_EVENTS or vn < _MIN_EVENTS:
+            return _BAYESIAN_INSUFF
+        if cd <= 0 or vd <= 0 or cn < 0 or vn < 0 or cn > cd or vn > vd:
+            return _BAYESIAN_NONE
+        a_c = _PRIOR_A + cn
+        b_c = _PRIOR_B + (cd - cn)
+        a_v = _PRIOR_A + vn
+        b_v = _PRIOR_B + (vd - vn)
+        p_c = _BAYESIAN_RNG.beta(a_c, b_c, _N_SIMS)
+        p_v = _BAYESIAN_RNG.beta(a_v, b_v, _N_SIMS)
+        uplift = (p_v - p_c) / np.clip(p_c, _EPS, None)
+        p_gt0 = round(float(np.mean(uplift > 0)), 4)
+        p_lt0 = round(float(np.mean(uplift < 0)), 4)
+        p_gt3 = round(float(np.mean(uplift > _UPLIFT_TH)), 4)
+        p_lt3 = round(float(np.mean(uplift < -_UPLIFT_TH)), 4)
+        p_neutral = round(float(np.mean(np.abs(uplift) <= _UPLIFT_TH)), 4)
+        decision = _assign_bayesian_decision(p_gt3, p_lt3)
+        return p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision
+    except Exception:
+        return _BAYESIAN_NONE
+
+
 def find_segments_row(df):
     """'Segments' 행을 찾아 데이터 시작 위치 반환"""
     for idx, row in df.iterrows():
@@ -976,6 +1037,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'denominator': kpi_config.get('denominator', ''),
                         'controlValue': None,  # Control 값 없음
                         'controlRate': None,  # Control rate 없음
+                        'p_gt0': None,
+                        'p_lt0': None,
+                        'p_gt3': None,
+                        'p_lt3': None,
+                        'p_neutral': None,
+                        'decision': None,
                         'variations': variation_data,
                     })
             elif kpi_config['type'] == 'rpv':
@@ -1036,6 +1103,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'denominator': kpi_config.get('denominator', ''),
                         'controlRate': rpv_c,
                         'controlValue': rev_c,
+                        'p_gt0': None,
+                        'p_lt0': None,
+                        'p_gt3': None,
+                        'p_lt3': None,
+                        'p_neutral': None,
+                        'decision': None,
                         'variations': variation_data,
                     })
     else:
@@ -1117,6 +1190,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     uplift = ((rate_v - rate_c) / rate_c * 100) if rate_c > 0 else 0
                     pC, confidence = compute_confidence_rate(num_c, den_c, num_v, den_v)
                     verdict = compute_verdict(uplift, num_c, num_v, confidence)
+                    p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision = compute_bayesian_probs(den_c, num_c, den_v, num_v)
                 else:
                     # denominator가 없으면 값만 사용 (simple 타입)
                     rate_c = None
@@ -1124,6 +1198,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     uplift = ((num_v - num_c) / num_c * 100) if num_c > 0 else 0
                     confidence = None
                     verdict = compute_verdict(uplift, num_c, num_v, confidence=None)
+                    p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision = None, None, None, None, None, None
                 
                 if debug:
                     print(f"  rate_c: {rate_c}, rate_v: {rate_v}, uplift: {uplift}")
@@ -1142,6 +1217,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'uplift': uplift,
                     'confidence': confidence,
                     'verdict': verdict,
+                    'p_gt0': p_gt0,
+                    'p_lt0': p_lt0,
+                    'p_gt3': p_gt3,
+                    'p_lt3': p_lt3,
+                    'p_neutral': p_neutral,
+                    'decision': decision,
                     'denominatorSize': (den_c + den_v) if (den_c is not None and den_v is not None) else 0,
                     'denominatorSizeControl': den_c if den_c is not None else 0,
                     'denominatorSizeVariation': den_v if den_v is not None else 0,
@@ -1189,6 +1270,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'uplift': None,  # Uplift 계산 안 함
                     'confidence': None,  # Confidence 계산 안 함
                     'verdict': None,  # Verdict 계산 안 함
+                    'p_gt0': None,
+                    'p_lt0': None,
+                    'p_gt3': None,
+                    'p_lt3': None,
+                    'p_neutral': None,
+                    'decision': None,
                     'denominatorSize': den_v if den_v is not None else 0,
                     'denominatorSizeControl': 0,
                     'denominatorSizeVariation': den_v if den_v is not None else 0,
@@ -1238,6 +1325,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'uplift': uplift,
                     'confidence': None,
                     'verdict': verdict,
+                    'p_gt0': None,
+                    'p_lt0': None,
+                    'p_gt3': None,
+                    'p_lt3': None,
+                    'p_neutral': None,
+                    'decision': None,
                     'denominatorSize': rev_c + rev_v,  # Revenue는 값 자체가 샘플 크기
                     'denominatorSizeControl': rev_c,
                     'denominatorSizeVariation': rev_v,
@@ -1281,6 +1374,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 
                 # 샘플 크기는 Revenue 값(분자) 기준
                 verdict = compute_verdict(uplift, rev_c, rev_v, confidence)
+                p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision = compute_bayesian_probs(visits_c, rev_c, visits_v, rev_v)
                 
                 results.append({
                     'country': country or 'N/A',  # 국가 정보가 없을 수 있음
@@ -1296,6 +1390,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'uplift': uplift,
                     'confidence': confidence,
                     'verdict': verdict,
+                    'p_gt0': p_gt0,
+                    'p_lt0': p_lt0,
+                    'p_gt3': p_gt3,
+                    'p_lt3': p_lt3,
+                    'p_neutral': p_neutral,
+                    'decision': decision,
                     'denominatorSize': visits_c + visits_v,
                 })
     
