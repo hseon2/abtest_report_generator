@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { AnalysisResultsTable } from './AnalysisResultsTable'
+import { ReportSummaryPanel } from './ReportSummaryPanel'
 import { FileMetadata } from '../../types'
 
 interface AnalysisResultsSectionProps {
@@ -13,6 +14,8 @@ interface AnalysisResultsSectionProps {
   excelUrl?: string
   parsedDataBase64?: string
   parsedDataUrl?: string
+  summaryResetToken?: number
+  onSummarySave?: (data: { testTitle: string; abTestSummary: string; abTestResults: string }) => void
   onReportOrderChange: (order: string) => void
 }
 
@@ -25,6 +28,8 @@ export function AnalysisResultsSection({
   excelUrl,
   parsedDataBase64,
   parsedDataUrl,
+  summaryResetToken,
+  onSummarySave,
   onReportOrderChange,
 }: AnalysisResultsSectionProps) {
   // 모든 결과를 플랫하게 가져오기
@@ -76,6 +81,12 @@ export function AnalysisResultsSection({
 
   return (
     <div className="results-section">
+      <ReportSummaryPanel
+        primaryResults={allResults}
+        summaryResetToken={summaryResetToken}
+        onSummarySave={onSummarySave}
+      />
+
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ margin: 0 }}>분석 결과</h2>
       </div>

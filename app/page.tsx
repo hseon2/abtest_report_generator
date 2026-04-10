@@ -20,6 +20,12 @@ export default function Home() {
   const [variationCount, setVariationCount] = useState<number>(1)
   const [segments, setSegments] = useState<string[]>(['All Visits'])
   const [useAI, setUseAI] = useState<boolean>(false)
+  const [savedSummary, setSavedSummary] = useState<{
+    testTitle: string
+    abTestSummary: string
+    abTestResults: string
+  } | null>(null)
+  const [summaryResetToken, setSummaryResetToken] = useState<number>(0)
 
   // Custom Hooks
   const { config, addKPI, removeKPI, updateKPI } = useKPIConfig()
@@ -130,6 +136,8 @@ export default function Home() {
                   onPrevious={() => setCurrentStep(2)}
                   onAnalyze={() => {
                     setCurrentStep(4)
+                    setSavedSummary(null)
+                    setSummaryResetToken(Date.now())
                     handleAnalyze()
                   }}
                 />
@@ -152,6 +160,9 @@ export default function Home() {
                       excelUrl={excelUrl || undefined}
                       parsedDataBase64={parsedDataBase64 || undefined}
                       parsedDataUrl={parsedDataUrl || undefined}
+                      summaryTitle={savedSummary?.testTitle || ''}
+                      summaryText={savedSummary?.abTestSummary || ''}
+                      summaryResults={savedSummary?.abTestResults || ''}
                     />
                   </div>
                 ) : (
@@ -223,6 +234,7 @@ export default function Home() {
                     onClick={() => {
                       setCurrentStep(1)
                       setSelectedReportOrder(null)
+                      setSavedSummary(null)
                     }}
                     style={{
                       flex: 1,
@@ -378,6 +390,8 @@ export default function Home() {
                 excelUrl={excelUrl || undefined}
                 parsedDataBase64={parsedDataBase64 || undefined}
                 parsedDataUrl={parsedDataUrl || undefined}
+                summaryResetToken={summaryResetToken}
+                onSummarySave={setSavedSummary}
                 onReportOrderChange={setSelectedReportOrder}
               />
             )}
