@@ -24,8 +24,7 @@ export function ReportSummaryPanel({ primaryResults, summaryResetToken, onSummar
 
   const storageKey = useMemo(() => {
     try {
-      const primaryOnly = (primaryResults || []).filter((r: any) => !r?.category || r?.category === 'primary')
-      const signature = primaryOnly
+      const signature = (primaryResults || [])
         .map((r: any) => `${r.reportOrder ?? ''}|${r.country ?? ''}|${r.kpiName ?? ''}|${r.device ?? r.segment ?? ''}|${r.verdict ?? ''}`)
         .join('||')
         .slice(0, 4000)
@@ -37,8 +36,7 @@ export function ReportSummaryPanel({ primaryResults, summaryResetToken, onSummar
   }, [primaryResults, scenario])
 
   const analysisSignature = useMemo(() => {
-    const primaryOnly = (primaryResults || []).filter((r: any) => !r?.category || r?.category === 'primary')
-    return primaryOnly
+    return (primaryResults || [])
       .map((r: any) => `${r.reportOrder ?? ''}|${r.country ?? ''}|${r.kpiName ?? ''}|${r.device ?? r.segment ?? ''}|${r.verdict ?? ''}|${r.uplift ?? ''}`)
       .join('||')
       .slice(0, 4000)
@@ -123,6 +121,15 @@ export function ReportSummaryPanel({ primaryResults, summaryResetToken, onSummar
       onSummarySave?.({ testTitle: '', abTestSummary: '', abTestResults: '' })
     }
   }, [analysisSignature, previousSignature, scenario, onSummarySave])
+
+  useEffect(() => {
+    // 다운로드 버튼이 최신 요약 텍스트를 즉시 참조하도록 부모 상태와 동기화
+    onSummarySave?.({
+      testTitle: testTitle.trim(),
+      abTestSummary,
+      abTestResults,
+    })
+  }, [testTitle, abTestSummary, abTestResults, onSummarySave])
 
   const handleGenerate = async () => {
     const trimmed = scenario.trim()

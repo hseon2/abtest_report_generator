@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-function compactPrimaryResultsForPrompt(primaryResults: unknown[]): string {
-  const rows = (primaryResults || []).filter((r: any) => {
-    const c = r?.category
-    return !c || c === 'primary'
-  })
-
-  return rows
+function compactAllResultsForPrompt(rows: unknown[]): string {
+  return (rows || [])
     .map((r: any) => {
       const parts = [
         `리포트순서=${r.reportOrder ?? 'N/A'}`,
         `국가=${r.country ?? 'N/A'}`,
         `KPI=${r.kpiName ?? 'N/A'}`,
+        `카테고리=${r.category ?? 'N/A'}`,
         `세그먼트=${r.device ?? r.segment ?? 'N/A'}`,
       ]
       if (r.errorMessage) {
@@ -173,13 +169,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const scenario = typeof body.scenario === 'string' ? body.scenario.trim() : ''
-    const primaryResults = Array.isArray(body.primaryResults) ? body.primaryResults : []
+    const allResults = Array.isArray(body.primaryResults) ? body.primaryResults : []
 
     if (!scenario) {
       return NextResponse.json({ error: '시나리오를 한 줄 입력해 주세요.' }, { status: 400 })
     }
-    if (primaryResults.length === 0) {
-      return NextResponse.json({ error: 'Primary KPI 분석 결과가 없습니다.' }, { status: 400 })
+    if (allResults.length === 0) {
+      return NextResponse.json({ error: '분석 결과가 없습니다.' }, { status: 400 })
     }
 
     const apiKey = process.env.GEMINI_API_KEY
@@ -217,37 +213,37 @@ export async function POST(request: NextRequest) {
       // keep default
     }
 
-    const dataBlock = compactPrimaryResultsForPrompt(primaryResults)
+    const dataBlock = compactAllResultsForPrompt(allResults)
     if (!dataBlock.trim()) {
       return NextResponse.json(
-        { error: 'Primary KPI 행이 없어 요약을 만들 수 없습니다.' },
+        { error: '분석 결과 행이 없어 요약을 만들 수 없습니다.' },
         { status: 400 }
       )
     }
 
-    const prompt = `당신은 A/B 테스트 리포트용 요약 작성자입니다. 아래 분석 데이터에 없는 수치·판정·세그먼트는 절대 만들지 마세요.
+    const prompt = `당신은 A/B 테스트 리포트용 요약 작성자입니다. 아래 분석 데이터에 없는 수치·판정·세그먼트는 절대 만들지 마세요. 형식은 따르되, 클라이언트에게 직관적으로 보고할 수 있도록 문장 구성을 해주세요. 아래 분석 데이터를 종합적으로 고려해서 분석 리포트를 작성해주세요.
 
 ## 사용자가 입력한 테스트 시나리오 (한 줄)
 ${scenario}
 
-## Primary KPI 분석 행 (리포트 순서, 국가, KPI, 세그먼트별. 세그먼트에는 All Visits, 방문 횟수·첫방문·재방문, 디바이스 MO/PC 등이 올 수 있음)
+## KPI 분석 행 (Primary/Secondary/Additional 포함. 리포트 순서, 국가, KPI, 카테고리, 세그먼트별)
 ${dataBlock}
 
 ## 말투·형식 (반드시 이 스타일을 따를 것)
 
 ### "abTestSummary" (화면 제목: AB 테스트 결과 요약)
-- **첫 줄**: 시나리오(변경 내용) + Primary KPI들을 한 문장으로 묶어 결론을 씀. "~에 따른 [KPI1] 및 [KPI2] 영향 없음" / "~ 유의미한 변화 없음" 처럼 간결한 보고체.
+- **첫 줄**: 시나리오(변경 내용) + 주요 KPI들(Primary 우선, 필요 시 Secondary/Additional 포함)을 한 문장으로 묶어 결론을 씀. 시나리오에 따른 테스트 결과가 잘 드러나도록 작성.
 - **둘째 줄(선택)**: 세그먼트가 데이터에 있으면, 첫 줄 다음에 줄바꿈 후 공백 3칸 + "- " 로 한 줄만 더 써도 됨. 예: "   - 방문 횟수별/디바이스별 모두 그룹간 차이 없음"
 - 이모지·따옴표 없이 한국어만.
+- 문체는 반드시 보고서형 **~함/음체**를 사용 (예: "유의미한 차이 없음", "영향 미미함").
 
 ### "abTestResults" (화면 제목: AB 테스트 결과)
-- **Primary KPI마다** 아래 패턴을 따름 (데이터에 있는 KPI·세그먼트만).
-- KPI별 첫 줄을 반드시 "- KPI 명: 결과" 형식으로 작성.
-  - 예: "- Cart CVR: 차이 없음"
+- **KPI마다** 아래 패턴을 따름 (Primary KPI뿐 아니라 데이터에 있는 Secondary/Additional KPI도 포함).
+- KPI별 첫 줄을 반드시 "- KPI 명: 결과" 형식으로 작성하되, **All Visits 세그먼트 결과를 중심으로 작성**.
   - 결과는 "차이 없음", "Variation 우세", "Control 우세", "모수 부족" 등 verdict 기반으로 작성.
+- 결과가 "차이 없음"인 경우에는 상세 줄에서 구체적인 Uplift/Confidence 수치를 반드시 쓰지 않아도 됨(필요 시 생략 가능).
 - KPI별 두 번째 줄부터는 반드시 공백 3칸 + "- " 로 시작하는 상세 줄 작성.
-  - 예: "   - 방문 횟수별: 첫 방문 차이 없음, 재방문 모수 부족"
-  - 예: "   - 디바이스별: MO 차이 없음, PC 차이 없음"
+  - 상세 줄은 **All Visits를 제외한 나머지 세그먼트 데이터(예: 방문 횟수별, 디바이스별 등)** 기반으로만 작성.
 - KPI가 여러 개면 위 2줄 패턴을 KPI 개수만큼 반복 (KPI 블록 사이 빈 줄 1줄 허용).
 
 ## JSON 출력

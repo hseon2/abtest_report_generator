@@ -35,10 +35,13 @@ export function AnalysisResultsSection({
   // 모든 결과를 플랫하게 가져오기
   const getAllResults = () => {
     if (!results) return []
-    // Python에서 반환하는 primaryResults 사용
-    if (results.primaryResults && Array.isArray(results.primaryResults)) {
-      return results.primaryResults
-    }
+    // Python 반환값: primary/secondary/additional 결과를 모두 합쳐 사용
+    const merged = [
+      ...(Array.isArray(results.primaryResults) ? results.primaryResults : []),
+      ...(Array.isArray(results.secondaryResults) ? results.secondaryResults : []),
+      ...(Array.isArray(results.additionalResults) ? results.additionalResults : []),
+    ]
+    if (merged.length > 0) return merged
     // 레거시: results.results도 지원
     if (results.results && Array.isArray(results.results)) {
       return results.results
