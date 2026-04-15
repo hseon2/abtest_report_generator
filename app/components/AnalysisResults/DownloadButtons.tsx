@@ -33,28 +33,25 @@ export function DownloadButtons({
           abTestResults: summaryResults || '',
         }),
       })
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = 'ab_test_report.xlsx'
-        document.body.appendChild(link)
-        link.click()
-        link.remove()
-        window.URL.revokeObjectURL(url)
-        return
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '')
+        throw new Error(errorText || `Summary 시트 생성 실패 (status: ${response.status})`)
       }
-    } catch (e) {
-      console.error('Summary 시트 다운로드 실패, 기본 다운로드로 폴백:', e)
-    }
 
-    downloadFile(
-      excelBase64,
-      excelUrl,
-      'ab_test_report.xlsx',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'ab_test_report.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      return
+    } catch (e) {
+      console.error('Summary 시트 다운로드 실패:', e)
+      alert('Summary 시트 생성에 실패했습니다. 콘솔 로그를 확인해주세요.')
+    }
   }
 
   const handleDownloadParsedData = () => {

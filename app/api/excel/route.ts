@@ -78,22 +78,21 @@ export async function POST(request: NextRequest) {
     const abTestSummary = typeof body.abTestSummary === 'string' ? body.abTestSummary : ''
     const abTestResults = typeof body.abTestResults === 'string' ? body.abTestResults : ''
 
-    if (testTitle || abTestSummary || abTestResults) {
-      const payloadPath = join(process.cwd(), 'tmp', `summary_payload_${Date.now()}.json`)
-      try {
-        await writeFile(
-          payloadPath,
-          JSON.stringify({ testTitle, abTestSummary, abTestResults }, null, 2),
-          'utf-8'
-        )
-        await execFileAsync(
-          'python',
-          [join(process.cwd(), 'python', 'add_summary_sheet.py'), excelPath, payloadPath],
-          process.cwd()
-        )
-      } finally {
-        await unlink(payloadPath).catch(() => undefined)
-      }
+    // 요약 텍스트가 비어 있어도 Summary 시트는 항상 생성되도록 처리
+    const payloadPath = join(process.cwd(), 'tmp', `summary_payload_${Date.now()}.json`)
+    try {
+      await writeFile(
+        payloadPath,
+        JSON.stringify({ testTitle, abTestSummary, abTestResults }, null, 2),
+        'utf-8'
+      )
+      await execFileAsync(
+        'python',
+        [join(process.cwd(), 'python', 'add_summary_sheet.py'), excelPath, payloadPath],
+        process.cwd()
+      )
+    } finally {
+      await unlink(payloadPath).catch(() => undefined)
     }
 
     const excelBuffer = await readFile(excelPath)
