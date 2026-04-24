@@ -919,11 +919,13 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         uplift = ((rate_v - rate_c) / rate_c * 100) if rate_c > 0 else 0
                         pC, confidence = compute_confidence_rate(num_c, den_c, num_v, den_v)
                         verdict = compute_verdict(uplift, num_c, num_v, confidence)
+                        p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision = compute_bayesian_probs(den_c, num_c, den_v, num_v)
                     else:
                         # denominator가 없으면 값만 비교
                         uplift = ((num_v - num_c) / num_c * 100) if num_c > 0 else 0
                         confidence = None
                         verdict = compute_verdict(uplift, num_c, num_v, confidence=None)
+                        p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision = None, None, None, None, None, None
                     
                     variation_data.append({
                         'variationNum': var_info['variation_num'],
@@ -931,6 +933,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'uplift': uplift,
                         'confidence': confidence,
                         'verdict': verdict,
+                        'p_gt0': p_gt0,
+                        'p_lt0': p_lt0,
+                        'p_gt3': p_gt3,
+                        'p_lt3': p_lt3,
+                        'p_neutral': p_neutral,
+                        'decision': decision,
                         'controlValue': num_c,
                         'variationValue': num_v,
                         'denominatorSizeControl': den_c if den_c is not None else 0,
@@ -1082,6 +1090,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     uplift = ((rpv_v - rpv_c) / rpv_c * 100) if rpv_c > 0 else 0
                     pC, confidence = compute_confidence_rate(rev_c, visits_c, rev_v, visits_v)
                     verdict = compute_verdict(uplift, rev_c, rev_v, confidence)
+                    p_gt0, p_lt0, p_gt3, p_lt3, p_neutral, decision = compute_bayesian_probs(visits_c, rev_c, visits_v, rev_v)
                     
                     variation_data.append({
                         'variationNum': var_info['variation_num'],
@@ -1089,6 +1098,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'uplift': uplift,
                         'confidence': confidence,
                         'verdict': verdict,
+                        'p_gt0': p_gt0,
+                        'p_lt0': p_lt0,
+                        'p_gt3': p_gt3,
+                        'p_lt3': p_lt3,
+                        'p_neutral': p_neutral,
+                        'decision': decision,
                         'controlValue': rev_c,
                         'variationValue': rev_v,
                     })
