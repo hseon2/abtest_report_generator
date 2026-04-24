@@ -117,7 +117,10 @@ export async function POST(request: NextRequest) {
         const encoder = new TextEncoder()
         try {
           await new Promise<void>((resolve, reject) => {
-            const child = spawn(pythonCmd, [pythonScript, filePaths[0], configPath], { env })
+            const child = spawn(pythonCmd, [pythonScript, filePaths[0], configPath], {
+              env,
+              cwd: process.cwd(),
+            })
             let buffer = ''
             child.stdout?.on('data', (chunk: Buffer) => {
               buffer += chunk.toString()
@@ -149,7 +152,12 @@ export async function POST(request: NextRequest) {
             } catch (_) {}
             await new Promise((r) => setTimeout(r, 100))
           }
-          if (!results) results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
+          if (!results) {
+            if (!fs.existsSync(resultsPath)) {
+              throw new Error(`analyze.py completed but results file was not created: ${resultsPath}`)
+            }
+            results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'))
+          }
           const hasResults =
             (results.primaryResults?.length > 0) ||
             (results.secondaryResults?.length > 0) ||
@@ -157,7 +165,10 @@ export async function POST(request: NextRequest) {
           if (!hasResults) results.warning = '분석 결과가 없습니다. Excel 파일 형식과 KPI 설정을 확인해주세요.'
 
           await new Promise<void>((resolve, reject) => {
-            const child = spawn(pythonCmd, [excelScript, resultsPath], { env })
+            const child = spawn(pythonCmd, [excelScript, resultsPath], {
+              env,
+              cwd: process.cwd(),
+            })
             let buffer = ''
             child.stdout?.on('data', (chunk: Buffer) => {
               buffer += chunk.toString()

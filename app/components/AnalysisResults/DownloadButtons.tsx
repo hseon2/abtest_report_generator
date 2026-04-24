@@ -24,6 +24,17 @@ export function DownloadButtons({
 }: DownloadButtonsProps) {
   const handleDownloadExcel = async () => {
     try {
+      const hasSummaryContent = Boolean(summaryTitle || summaryText || summaryResults)
+      if (!hasSummaryContent) {
+        await downloadFile(
+          excelBase64,
+          excelUrl,
+          'ab_test_report.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        return
+      }
+
       const response = await fetch('/api/excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -55,7 +66,15 @@ export function DownloadButtons({
   }
 
   const handleDownloadParsedData = () => {
-    downloadFile(parsedDataBase64, parsedDataUrl, 'parsed_data.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    downloadFile(
+      parsedDataBase64,
+      parsedDataUrl,
+      'parsed_data.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ).catch((e) => {
+      console.error('파싱 데이터 다운로드 실패:', e)
+      alert('파싱 데이터 다운로드에 실패했습니다. 콘솔 로그를 확인해주세요.')
+    })
   }
 
   return (
