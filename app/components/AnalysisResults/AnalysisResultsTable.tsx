@@ -184,6 +184,10 @@ export function AnalysisResultsTable({
                         const firstResult = kpiResults[0]
                         const kpiCategory = firstResult?.category
                         const categoryLabel = getKPICategoryLabel(kpiCategory)
+                        const isRevenueType = firstResult?.kpiType === 'revenue'
+                        const isAopType = firstResult?.kpiType === 'aop'
+                        const hideDecision = isRevenueType || isAopType
+                        const exchangeRate = firstResult?.exchangeRate
 
                         const isVariationOnly = firstResult &&
                           (firstResult.controlValue === null || firstResult.controlValue === undefined) &&
@@ -199,6 +203,11 @@ export function AnalysisResultsTable({
                             <h5 style={{ color: '#7f8c8d', marginBottom: '12px', paddingBottom: '5px', borderBottom: '1px solid #bdc3c7', fontSize: '16px' }}>
                               {categoryLabel && <span style={{ color: '#3498db', fontWeight: 'bold', marginRight: '8px' }}>{categoryLabel}</span>}
                               {kpiName}
+                              {(isRevenueType || isAopType) && exchangeRate != null && exchangeRate !== '' && (
+                                <span style={{ marginLeft: '10px', fontSize: '12px', fontWeight: 600, color: '#7f8c8d' }}>
+                                  USD 환산 (환율: {Number(exchangeRate).toLocaleString()})
+                                </span>
+                              )}
                             </h5>
 
                             <div className="table-container">
@@ -208,25 +217,35 @@ export function AnalysisResultsTable({
                                     <tr>
                                       <th>세그먼트</th>
                                       {!isVariationOnly && (
-                                        <th>{isSimpleType ? 'Control Count' : 'Control Rate (%)'}</th>
+                                        <th>{isRevenueType || isAopType ? 'Control ($)' : isSimpleType ? 'Control Count' : 'Control Rate (%)'}</th>
                                       )}
                                       {Array.from({ length: variationCount }, (_, i) => (
-                                        <th key={`var-rate-${i}`}>{isSimpleType ? `Variation ${i + 1} Count` : `Variation ${i + 1} Rate (%)`}</th>
+                                        <th key={`var-rate-${i}`}>
+                                          {isRevenueType || isAopType
+                                            ? `Variation ${i + 1} ($)`
+                                            : isSimpleType
+                                              ? `Variation ${i + 1} Count`
+                                              : `Variation ${i + 1} Rate (%)`}
+                                        </th>
                                       ))}
                                       {!isVariationOnly && (
                                         <>
                                           {Array.from({ length: variationCount }, (_, i) => (
                                             <th key={`var-uplift-${i}`}>Variation {i + 1} Uplift (%)</th>
                                           ))}
-                                          {Array.from({ length: variationCount }, (_, i) => (
-                                            <th key={`var-verdict-${i}`}>Variation {i + 1} Decision</th>
-                                          ))}
-                                          {Array.from({ length: variationCount }, (_, i) => (
-                                            <th key={`var-bayes-${i}`} style={{ backgroundColor: '#1a6a99', color: '#ffffff' }}>
-                                              Variation {i + 1} Decision
-                                              <span style={{ fontSize: '10px', color: '#b3d9f2', fontWeight: 'normal', marginLeft: '4px' }}>(베이지안)</span>
-                                            </th>
-                                          ))}
+                                          {!hideDecision && (
+                                            <>
+                                              {Array.from({ length: variationCount }, (_, i) => (
+                                                <th key={`var-verdict-${i}`}>Variation {i + 1} Decision</th>
+                                              ))}
+                                              {Array.from({ length: variationCount }, (_, i) => (
+                                                <th key={`var-bayes-${i}`} style={{ backgroundColor: '#1a6a99', color: '#ffffff' }}>
+                                                  Variation {i + 1} Decision
+                                                  <span style={{ fontSize: '10px', color: '#b3d9f2', fontWeight: 'normal', marginLeft: '4px' }}>(베이지안)</span>
+                                                </th>
+                                              ))}
+                                            </>
+                                          )}
                                         </>
                                       )}
                                     </tr>
@@ -234,20 +253,24 @@ export function AnalysisResultsTable({
                                     <tr>
                                       <th>세그먼트</th>
                                       {!isVariationOnly && (
-                                        <th>{isSimpleType ? 'Control Count' : 'Control Rate (%)'}</th>
+                                      <th>{isRevenueType || isAopType ? 'Control ($)' : isSimpleType ? 'Control Count' : 'Control Rate (%)'}</th>
                                       )}
-                                      <th>{isSimpleType ? 'Variation Count' : 'Variation Rate (%)'}</th>
+                                    <th>{isRevenueType || isAopType ? 'Variation ($)' : isSimpleType ? 'Variation Count' : 'Variation Rate (%)'}</th>
                                       {!isVariationOnly && (
                                         <>
                                           <th>Uplift (%) (Confidence)</th>
-                                          <th>
-                                            Decision
-                                            <span style={{ fontSize: '10px', color: '#ffffff', fontWeight: 'normal', marginLeft: '4px' }}>(빈도주의)</span>
-                                          </th>
-                                          <th style={{ backgroundColor: '#1a6a99', color: '#ffffff' }}>
-                                            Decision
-                                            <span style={{ fontSize: '10px', color: '#b3d9f2', fontWeight: 'normal', marginLeft: '4px' }}>(베이지안)</span>
-                                          </th>
+                                          {!hideDecision && (
+                                            <>
+                                              <th>
+                                                Decision
+                                                <span style={{ fontSize: '10px', color: '#ffffff', fontWeight: 'normal', marginLeft: '4px' }}>(빈도주의)</span>
+                                              </th>
+                                              <th style={{ backgroundColor: '#1a6a99', color: '#ffffff' }}>
+                                                Decision
+                                                <span style={{ fontSize: '10px', color: '#b3d9f2', fontWeight: 'normal', marginLeft: '4px' }}>(베이지안)</span>
+                                              </th>
+                                            </>
+                                          )}
                                         </>
                                       )}
                                     </tr>
@@ -257,8 +280,12 @@ export function AnalysisResultsTable({
                                   {kpiResults.map((r: any, i: number) => {
                                     if (r.error && r.errorMessage) {
                                       const errorColSpan = variationCount > 1
-                                        ? (isVariationOnly ? 1 + variationCount : 2 + variationCount * 4)
-                                        : (isVariationOnly ? 2 : 4)
+                                        ? (isVariationOnly
+                                          ? 1 + variationCount
+                                          : hideDecision
+                                            ? 2 + variationCount * 2
+                                            : 2 + variationCount * 4)
+                                        : (isVariationOnly ? 2 : hideDecision ? 4 : 6)
                                       return (
                                         <tr key={i} style={{ backgroundColor: '#fff3cd' }}>
                                           <td colSpan={errorColSpan} style={{ color: '#856404', padding: '15px', textAlign: 'center' }}>
@@ -280,15 +307,27 @@ export function AnalysisResultsTable({
                                               <td style={(r.controlRate === null || r.controlRate === undefined) && (r.controlValue === null || r.controlValue === undefined) ? { backgroundColor: '#e0e0e0' } : {}}>
                                                 {r.controlRate !== null && r.controlRate !== undefined ? (
                                                   <>
-                                                    <strong>{(r.controlRate * 100).toFixed(2)}%</strong>
-                                                    {r.controlValue !== null && r.controlValue !== undefined && r.denominatorSizeControl !== null && r.denominatorSizeControl !== undefined && (
-                                                      <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
-                                                        ({Math.round(r.controlValue)}/{Math.round(r.denominatorSizeControl)})
-                                                      </span>
+                                                    <strong>
+                                                      {isAopType
+                                                        ? `$${Number(r.controlRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                                        : `${(r.controlRate * 100).toFixed(2)}%`}
+                                                    </strong>
+                                                    {isAopType ? (
+                                                      r.controlValue !== null && r.controlValue !== undefined ? (
+                                                        <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                          ({Math.round(r.controlValue).toLocaleString()} 건)
+                                                        </span>
+                                                      ) : null
+                                                    ) : (
+                                                      r.controlValue !== null && r.controlValue !== undefined && r.denominatorSizeControl !== null && r.denominatorSizeControl !== undefined && (
+                                                        <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                          ({Math.round(r.controlValue)}/{Math.round(r.denominatorSizeControl)})
+                                                        </span>
+                                                      )
                                                     )}
                                                   </>
                                                 ) : r.controlValue !== null && r.controlValue !== undefined ? (
-                                                  <strong>{Math.round(r.controlValue).toLocaleString()}</strong>
+                                                  <strong>{isRevenueType ? `$${Math.round(r.controlValue).toLocaleString()}` : Math.round(r.controlValue).toLocaleString()}</strong>
                                                 ) : (
                                                   <span style={{ color: '#999' }}>N/A</span>
                                                 )}
@@ -300,15 +339,27 @@ export function AnalysisResultsTable({
                                                 <td key={`rate-${idx}`} style={varData && (varData.variationRate === null || varData.variationRate === undefined) && (varData.variationValue === null || varData.variationValue === undefined) ? { backgroundColor: '#e0e0e0' } : {}}>
                                                   {varData && varData.variationRate !== null && varData.variationRate !== undefined ? (
                                                     <>
-                                                      <strong>{(varData.variationRate * 100).toFixed(2)}%</strong>
-                                                      {varData.variationValue !== null && varData.variationValue !== undefined && varData.denominatorSizeVariation !== null && varData.denominatorSizeVariation !== undefined && (
-                                                        <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
-                                                          ({Math.round(varData.variationValue)}/{Math.round(varData.denominatorSizeVariation)})
-                                                        </span>
+                                                      <strong>
+                                                        {isAopType
+                                                          ? `$${Number(varData.variationRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                                          : `${(varData.variationRate * 100).toFixed(2)}%`}
+                                                      </strong>
+                                                      {isAopType ? (
+                                                        varData.variationValue !== null && varData.variationValue !== undefined ? (
+                                                          <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                            ({Math.round(varData.variationValue).toLocaleString()} 건)
+                                                          </span>
+                                                        ) : null
+                                                      ) : (
+                                                        varData.variationValue !== null && varData.variationValue !== undefined && varData.denominatorSizeVariation !== null && varData.denominatorSizeVariation !== undefined && (
+                                                          <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                            ({Math.round(varData.variationValue)}/{Math.round(varData.denominatorSizeVariation)})
+                                                          </span>
+                                                        )
                                                       )}
                                                     </>
                                                   ) : varData && varData.variationValue !== null && varData.variationValue !== undefined ? (
-                                                    <strong>{Math.round(varData.variationValue).toLocaleString()}</strong>
+                                                    <strong>{isRevenueType ? `$${Math.round(varData.variationValue).toLocaleString()}` : Math.round(varData.variationValue).toLocaleString()}</strong>
                                                   ) : (
                                                     <span style={{ color: '#999' }}>N/A</span>
                                                   )}
@@ -341,84 +392,88 @@ export function AnalysisResultsTable({
                                                     </td>
                                                   )
                                                 })}
-                                                {Array.from({ length: variationCount }, (_, idx) => {
-                                                  const varData = r.variations.find((v: any) => v.variationNum === idx + 1)
-                                                  const additionalDays = varData?.verdict
-                                                    ? calculateAdditionalPeriod(varData.verdict, r.controlValue, varData.variationValue, r.country, reportOrder)
-                                                    : null
-                                                  return (
-                                                    <td key={`verdict-${idx}`} style={!varData || !varData.verdict ? { backgroundColor: '#e0e0e0' } : {}}>
-                                                      {varData?.verdict ? (
-                                                        <>
-                                                          <span className={`verdict-${varData.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
-                                                            {varData.verdict}
-                                                          </span>
-                                                          {additionalDays !== null && additionalDays > 0 && (
-                                                            <div style={{ fontSize: '11px', color: '#e67e22', marginTop: '4px', fontStyle: 'italic' }}>
-                                                              *모수 확보까지 {additionalDays}일 소요 예상
-                                                            </div>
+                                                {!hideDecision && (
+                                                  <>
+                                                    {Array.from({ length: variationCount }, (_, idx) => {
+                                                      const varData = r.variations.find((v: any) => v.variationNum === idx + 1)
+                                                      const additionalDays = varData?.verdict
+                                                        ? calculateAdditionalPeriod(varData.verdict, r.controlValue, varData.variationValue, r.country, reportOrder)
+                                                        : null
+                                                      return (
+                                                        <td key={`verdict-${idx}`} style={!varData || !varData.verdict ? { backgroundColor: '#e0e0e0' } : {}}>
+                                                          {varData?.verdict ? (
+                                                            <>
+                                                              <span className={`verdict-${varData.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
+                                                                {varData.verdict}
+                                                              </span>
+                                                              {additionalDays !== null && additionalDays > 0 && (
+                                                                <div style={{ fontSize: '11px', color: '#e67e22', marginTop: '4px', fontStyle: 'italic' }}>
+                                                                  *모수 확보까지 {additionalDays}일 소요 예상
+                                                                </div>
+                                                              )}
+                                                            </>
+                                                          ) : (
+                                                            <span style={{ color: '#999' }}>N/A</span>
                                                           )}
-                                                        </>
-                                                      ) : (
-                                                        <span style={{ color: '#999' }}>N/A</span>
-                                                      )}
-                                                    </td>
-                                                  )
-                                                })}
-                                                {Array.from({ length: variationCount }, (_, idx) => {
-                                                  const varData = r.variations.find((v: any) => v.variationNum === idx + 1)
-                                                  return (
-                                                    <td
-                                                      key={`bayes-${idx}`}
-                                                      style={{ backgroundColor: '#f0f7ff', textAlign: 'center', fontSize: '13px' }}
-                                                    >
-                                                      <div style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        {varData?.decision === '모수부족 (60건 미만)' ? (
-                                                          <span style={{ color: '#aaa', fontSize: '12px' }}>모수부족 (60건 미만)</span>
-                                                        ) : varData?.decision ? (
-                                                          <strong style={{
-                                                            color: varData.decision.includes('Strong Variation') ? '#1a7a3c'
-                                                              : varData.decision.includes('Strong Control') ? '#c0392b'
-                                                              : varData.decision.includes('Soft Variation') ? '#27ae60'
-                                                              : varData.decision.includes('Soft Control') ? '#e74c3c'
-                                                              : '#666',
-                                                            lineHeight: 1.3
-                                                          }}>
-                                                            {varData.decision}
-                                                          </strong>
-                                                        ) : (
-                                                          <span style={{ color: '#bbb' }}>—</span>
-                                                        )}
-                                                      </div>
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => openBayesianModal(
-                                                          `${country} / ${kpiName} / ${r.device || 'N/A'} / Variation ${idx + 1}`,
-                                                          varData?.decision,
-                                                          {
-                                                            p_gt3: varData?.p_gt3,
-                                                            p_lt3: varData?.p_lt3,
-                                                            p_neutral: varData?.p_neutral,
-                                                            p_gt0: varData?.p_gt0,
-                                                            p_lt0: varData?.p_lt0,
-                                                          }
-                                                        )}
-                                                        style={{
-                                                          marginTop: '6px',
-                                                          padding: '3px 8px',
-                                                          fontSize: '11px',
-                                                          color: '#1a6a99',
-                                                          border: '1px solid #9fc4df',
-                                                          borderRadius: '12px',
-                                                          background: '#fff',
-                                                          cursor: 'pointer'
-                                                        }}
-                                                      >
-                                                        확률 보기
-                                                      </button>
-                                                    </td>
-                                                  )
-                                                })}
+                                                        </td>
+                                                      )
+                                                    })}
+                                                    {Array.from({ length: variationCount }, (_, idx) => {
+                                                      const varData = r.variations.find((v: any) => v.variationNum === idx + 1)
+                                                      return (
+                                                        <td
+                                                          key={`bayes-${idx}`}
+                                                          style={{ backgroundColor: '#f0f7ff', textAlign: 'center', fontSize: '13px' }}
+                                                        >
+                                                          <div style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            {varData?.decision === '모수부족 (60건 미만)' ? (
+                                                              <span style={{ color: '#aaa', fontSize: '12px' }}>모수부족 (60건 미만)</span>
+                                                            ) : varData?.decision ? (
+                                                              <strong style={{
+                                                                color: varData.decision.includes('Strong Variation') ? '#1a7a3c'
+                                                                  : varData.decision.includes('Strong Control') ? '#c0392b'
+                                                                  : varData.decision.includes('Soft Variation') ? '#27ae60'
+                                                                  : varData.decision.includes('Soft Control') ? '#e74c3c'
+                                                                  : '#666',
+                                                                lineHeight: 1.3
+                                                              }}>
+                                                                {varData.decision}
+                                                              </strong>
+                                                            ) : (
+                                                              <span style={{ color: '#bbb' }}>—</span>
+                                                            )}
+                                                          </div>
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => openBayesianModal(
+                                                              `${country} / ${kpiName} / ${r.device || 'N/A'} / Variation ${idx + 1}`,
+                                                              varData?.decision,
+                                                              {
+                                                                p_gt3: varData?.p_gt3,
+                                                                p_lt3: varData?.p_lt3,
+                                                                p_neutral: varData?.p_neutral,
+                                                                p_gt0: varData?.p_gt0,
+                                                                p_lt0: varData?.p_lt0,
+                                                              }
+                                                            )}
+                                                            style={{
+                                                              marginTop: '6px',
+                                                              padding: '3px 8px',
+                                                              fontSize: '11px',
+                                                              color: '#1a6a99',
+                                                              border: '1px solid #9fc4df',
+                                                              borderRadius: '12px',
+                                                              background: '#fff',
+                                                              cursor: 'pointer'
+                                                            }}
+                                                          >
+                                                            확률 보기
+                                                          </button>
+                                                        </td>
+                                                      )
+                                                    })}
+                                                  </>
+                                                )}
                                               </>
                                             )}
                                           </tr>
@@ -436,15 +491,27 @@ export function AnalysisResultsTable({
                                             <td style={(r.controlRate === null || r.controlRate === undefined) && (r.controlValue === null || r.controlValue === undefined) ? { backgroundColor: '#e0e0e0' } : {}}>
                                               {r.controlRate !== null && r.controlRate !== undefined ? (
                                                 <>
-                                                  <strong>{(r.controlRate * 100).toFixed(2)}%</strong>
-                                                  {r.controlValue !== null && r.controlValue !== undefined && r.denominatorSizeControl !== null && r.denominatorSizeControl !== undefined && (
-                                                    <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
-                                                      ({Math.round(r.controlValue)}/{Math.round(r.denominatorSizeControl)})
-                                                    </span>
+                                                  <strong>
+                                                    {isAopType
+                                                      ? `$${Number(r.controlRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                                      : `${(r.controlRate * 100).toFixed(2)}%`}
+                                                  </strong>
+                                                  {isAopType ? (
+                                                    r.controlValue !== null && r.controlValue !== undefined ? (
+                                                      <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                        ({Math.round(r.controlValue).toLocaleString()} 건)
+                                                      </span>
+                                                    ) : null
+                                                  ) : (
+                                                    r.controlValue !== null && r.controlValue !== undefined && r.denominatorSizeControl !== null && r.denominatorSizeControl !== undefined && (
+                                                      <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                        ({Math.round(r.controlValue)}/{Math.round(r.denominatorSizeControl)})
+                                                      </span>
+                                                    )
                                                   )}
                                                 </>
                                               ) : r.controlValue !== null && r.controlValue !== undefined ? (
-                                                <strong>{Math.round(r.controlValue).toLocaleString()}</strong>
+                                                <strong>{isRevenueType ? `$${Math.round(r.controlValue).toLocaleString()}` : Math.round(r.controlValue).toLocaleString()}</strong>
                                               ) : (
                                                 <span style={{ color: '#999' }}>N/A</span>
                                               )}
@@ -453,15 +520,27 @@ export function AnalysisResultsTable({
                                           <td style={(r.variationRate === null || r.variationRate === undefined) && (r.variationValue === null || r.variationValue === undefined) ? { backgroundColor: '#e0e0e0' } : {}}>
                                             {r.variationRate !== null && r.variationRate !== undefined ? (
                                               <>
-                                                <strong>{(r.variationRate * 100).toFixed(2)}%</strong>
-                                                {r.variationValue !== null && r.variationValue !== undefined && r.denominatorSizeVariation !== null && r.denominatorSizeVariation !== undefined && (
-                                                  <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
-                                                    ({Math.round(r.variationValue)}/{Math.round(r.denominatorSizeVariation)})
-                                                  </span>
+                                                <strong>
+                                                  {isAopType
+                                                    ? `$${Number(r.variationRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                                    : `${(r.variationRate * 100).toFixed(2)}%`}
+                                                </strong>
+                                                {isAopType ? (
+                                                  r.variationValue !== null && r.variationValue !== undefined ? (
+                                                    <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                      ({Math.round(r.variationValue).toLocaleString()} 건)
+                                                    </span>
+                                                  ) : null
+                                                ) : (
+                                                  r.variationValue !== null && r.variationValue !== undefined && r.denominatorSizeVariation !== null && r.denominatorSizeVariation !== undefined && (
+                                                    <span style={{ fontSize: '11px', color: '#666', marginLeft: '5px' }}>
+                                                      ({Math.round(r.variationValue)}/{Math.round(r.denominatorSizeVariation)})
+                                                    </span>
+                                                  )
                                                 )}
                                               </>
                                             ) : r.variationValue !== null && r.variationValue !== undefined ? (
-                                              <strong>{Math.round(r.variationValue).toLocaleString()}</strong>
+                                              <strong>{isRevenueType ? `$${Math.round(r.variationValue).toLocaleString()}` : Math.round(r.variationValue).toLocaleString()}</strong>
                                             ) : (
                                               <span style={{ color: '#999' }}>N/A</span>
                                             )}
@@ -485,73 +564,77 @@ export function AnalysisResultsTable({
                                                   <span style={{ color: '#999' }}>N/A</span>
                                                 )}
                                               </td>
-                                              {/* Decision (빈도주의) */}
-                                              <td style={!r.verdict ? { backgroundColor: '#e0e0e0' } : {}}>
-                                                {r.verdict ? (
-                                                  <>
-                                                    <span className={`verdict-${r.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
-                                                      {r.verdict}
-                                                    </span>
-                                                    {(() => {
-                                                      const additionalDays = calculateAdditionalPeriod(r.verdict, r.controlValue, r.variationValue, r.country, reportOrder)
-                                                      return additionalDays !== null && additionalDays > 0 ? (
-                                                        <div style={{ fontSize: '11px', color: '#e67e22', marginTop: '4px', fontStyle: 'italic' }}>
-                                                          *모수 확보까지 {additionalDays}일 소요 예상
-                                                        </div>
-                                                      ) : null
-                                                    })()}
-                                                  </>
-                                                ) : (
-                                                  <span style={{ color: '#999' }}>N/A</span>
-                                                )}
-                                              </td>
-                                              {/* Decision (베이지안) */}
-                                              <td style={{ backgroundColor: '#f0f7ff', textAlign: 'center', fontSize: '13px' }}>
-                                                <div style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                  {r.decision === '모수부족 (60건 미만)' ? (
-                                                    <span style={{ color: '#aaa', fontSize: '12px' }}>모수부족 (60건 미만)</span>
-                                                  ) : r.decision ? (
-                                                    <strong style={{
-                                                      color: r.decision.includes('Strong Variation') ? '#1a7a3c'
-                                                        : r.decision.includes('Strong Control') ? '#c0392b'
-                                                        : r.decision.includes('Soft Variation') ? '#27ae60'
-                                                        : r.decision.includes('Soft Control') ? '#e74c3c'
-                                                        : '#666',
-                                                      lineHeight: 1.3
-                                                    }}>
-                                                      {r.decision}
-                                                    </strong>
-                                                  ) : (
-                                                    <span style={{ color: '#bbb' }}>—</span>
-                                                  )}
-                                                </div>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => openBayesianModal(
-                                                    `${country} / ${kpiName} / ${r.device || 'N/A'} / Variation 1`,
-                                                    r.decision,
-                                                    {
-                                                      p_gt3: r.p_gt3,
-                                                      p_lt3: r.p_lt3,
-                                                      p_neutral: r.p_neutral,
-                                                      p_gt0: r.p_gt0,
-                                                      p_lt0: r.p_lt0,
-                                                    }
-                                                  )}
-                                                  style={{
-                                                    marginTop: '6px',
-                                                    padding: '3px 8px',
-                                                    fontSize: '11px',
-                                                    color: '#1a6a99',
-                                                    border: '1px solid #9fc4df',
-                                                    borderRadius: '12px',
-                                                    background: '#fff',
-                                                    cursor: 'pointer'
-                                                  }}
-                                                >
-                                                  확률 보기
-                                                </button>
-                                              </td>
+                                              {!hideDecision && (
+                                                <>
+                                                  {/* Decision (빈도주의) */}
+                                                  <td style={!r.verdict ? { backgroundColor: '#e0e0e0' } : {}}>
+                                                    {r.verdict ? (
+                                                      <>
+                                                        <span className={`verdict-${r.verdict.replace(/\s/g, '-').replace('(', '').replace(')', '').toLowerCase()}`}>
+                                                          {r.verdict}
+                                                        </span>
+                                                        {(() => {
+                                                          const additionalDays = calculateAdditionalPeriod(r.verdict, r.controlValue, r.variationValue, r.country, reportOrder)
+                                                          return additionalDays !== null && additionalDays > 0 ? (
+                                                            <div style={{ fontSize: '11px', color: '#e67e22', marginTop: '4px', fontStyle: 'italic' }}>
+                                                              *모수 확보까지 {additionalDays}일 소요 예상
+                                                            </div>
+                                                          ) : null
+                                                        })()}
+                                                      </>
+                                                    ) : (
+                                                      <span style={{ color: '#999' }}>N/A</span>
+                                                    )}
+                                                  </td>
+                                                  {/* Decision (베이지안) */}
+                                                  <td style={{ backgroundColor: '#f0f7ff', textAlign: 'center', fontSize: '13px' }}>
+                                                    <div style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                      {r.decision === '모수부족 (60건 미만)' ? (
+                                                        <span style={{ color: '#aaa', fontSize: '12px' }}>모수부족 (60건 미만)</span>
+                                                      ) : r.decision ? (
+                                                        <strong style={{
+                                                          color: r.decision.includes('Strong Variation') ? '#1a7a3c'
+                                                            : r.decision.includes('Strong Control') ? '#c0392b'
+                                                            : r.decision.includes('Soft Variation') ? '#27ae60'
+                                                            : r.decision.includes('Soft Control') ? '#e74c3c'
+                                                            : '#666',
+                                                          lineHeight: 1.3
+                                                        }}>
+                                                          {r.decision}
+                                                        </strong>
+                                                      ) : (
+                                                        <span style={{ color: '#bbb' }}>—</span>
+                                                      )}
+                                                    </div>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => openBayesianModal(
+                                                        `${country} / ${kpiName} / ${r.device || 'N/A'} / Variation 1`,
+                                                        r.decision,
+                                                        {
+                                                          p_gt3: r.p_gt3,
+                                                          p_lt3: r.p_lt3,
+                                                          p_neutral: r.p_neutral,
+                                                          p_gt0: r.p_gt0,
+                                                          p_lt0: r.p_lt0,
+                                                        }
+                                                      )}
+                                                      style={{
+                                                        marginTop: '6px',
+                                                        padding: '3px 8px',
+                                                        fontSize: '11px',
+                                                        color: '#1a6a99',
+                                                        border: '1px solid #9fc4df',
+                                                        borderRadius: '12px',
+                                                        background: '#fff',
+                                                        cursor: 'pointer'
+                                                      }}
+                                                    >
+                                                      확률 보기
+                                                    </button>
+                                                  </td>
+                                                </>
+                                              )}
                                             </>
                                           )}
                                         </tr>

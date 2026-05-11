@@ -53,11 +53,14 @@ export function useAnalysis() {
           if (kpi.type === 'revenue') {
             primaryKPIs.push(kpi)
           } else if (kpi.type === 'simple' || kpi.type === 'variation_only') {
+            // simple/variation_only는 일부 필드만 사용하지만, 선택한 행 데이터(numeratorRow/denominatorRow)는 보존해야 함
             primaryKPIs.push({
               name: kpi.name || kpi.numerator || 'Unknown',
               numerator: kpi.numerator || kpi.name || '',
               denominator: kpi.denominator || '',
-              type: kpi.type
+              type: kpi.type,
+              numeratorRow: kpi.numeratorRow,
+              denominatorRow: kpi.denominatorRow,
             })
           } else {
             primaryKPIs.push(kpi)

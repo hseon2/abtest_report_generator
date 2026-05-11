@@ -671,6 +671,75 @@ def compute_verdict(uplift, num_c, num_v, confidence=None):
     # 그 외 (신뢰도 90% 미만)
     return '차이 없음'
 
+def _coerce_numeric(value):
+    """프론트엔드에서 전달된 셀 값을 float로 변환. 변환 불가 시 None 반환."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            import math
+            if isinstance(value, float) and math.isnan(value):
+                return None
+        except Exception:
+            pass
+        return float(value)
+    s = str(value).strip()
+    if s == '' or s.lower() == 'nan':
+        return None
+    # 통화 기호, 천단위 구분자, 공백 제거. 괄호 음수 표기는 단순히 음수로 변환.
+    cleaned = s.replace(',', '').replace(' ', '').replace('\u00a0', '')
+    for sym in ['$', '€', '£', '¥', '₩', '₹']:
+        cleaned = cleaned.replace(sym, '')
+    if cleaned.endswith('%'):
+        cleaned = cleaned[:-1]
+    if cleaned.startswith('(') and cleaned.endswith(')'):
+        cleaned = '-' + cleaned[1:-1]
+    try:
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+
+def get_kpi_metric_value(data_df, kpi_config, field, device_col, debug=False, fallback_label=None):
+    """
+    KPI 분자/분모 메트릭 값 조회.
+
+    - kpi_config에 ``numeratorRow`` / ``denominatorRow`` 가 있고, 그 row dict에 ``device_col`` 키가
+      존재하면 사용자가 미리보기에서 직접 클릭한 행의 값을 그대로 사용한다. (메트릭 이름 재검색 X)
+    - 위 조건이 충족되지 않으면 기존 ``find_metric_value`` 로 폴백한다.
+
+    Args:
+        data_df: 분석용 DataFrame (폴백 시 사용)
+        kpi_config: 현재 처리 중인 KPI 설정 dict
+        field: 'numerator' 또는 'denominator' (또는 None: 항상 폴백)
+        device_col: 'B', 'C', 'D' 등 엑셀 컬럼 letter
+        debug: 디버그 로그 출력 여부
+        fallback_label: 폴백 시 사용할 메트릭 이름 (없으면 kpi_config[field] 사용)
+    """
+    row_key = f'{field}Row' if field in ('numerator', 'denominator') else None
+    row_data = kpi_config.get(row_key) if row_key else None
+
+    if isinstance(row_data, dict) and device_col in row_data:
+        coerced = _coerce_numeric(row_data.get(device_col))
+        if coerced is not None:
+            if debug:
+                label = kpi_config.get(field, '') if field else ''
+                print(f"DEBUG: [선택된 행 사용] {field}='{label}', col={device_col} -> {coerced}")
+            return coerced
+        if debug:
+            label = kpi_config.get(field, '') if field else ''
+            print(f"DEBUG: [선택된 행에서 변환 실패] {field}='{label}', col={device_col}, raw={row_data.get(device_col)!r} -> 폴백 시도")
+
+    label = ''
+    if field in ('numerator', 'denominator'):
+        label = kpi_config.get(field, '') or ''
+    if not label:
+        label = fallback_label or ''
+    if not label:
+        return None
+    return find_metric_value(data_df, label, None, device_col, debug)
+
+
 def find_metric_value(data_df, metric_label, country, device_col, debug=False):
     """
     특정 메트릭 값 찾기
@@ -854,12 +923,12 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     print(f"DEBUG compute_kpi (variation_count > 1): KPI={kpi_config['name']}, segment={base_segment_name}, control_col={control_col}")
                     print(f"  numerator={kpi_config['numerator']}, denominator={kpi_config.get('denominator', '')}")
                 
-                num_c = find_metric_value(data_df, kpi_config['numerator'], None, control_col, debug)
+                num_c = get_kpi_metric_value(data_df, kpi_config, 'numerator', control_col, debug)
                 
                 # denominator가 있으면 rate 계산, 없으면 값만 사용
                 den_label = kpi_config.get('denominator', '')
                 if den_label and den_label.strip():
-                    den_c = find_metric_value(data_df, kpi_config['denominator'], None, control_col, debug)
+                    den_c = get_kpi_metric_value(data_df, kpi_config, 'denominator', control_col, debug)
                 else:
                     den_c = None
                 
@@ -892,11 +961,11 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     if debug:
                         print(f"  Variation {variation_num} 처리: variation_col={variation_col}")
                     
-                    num_v = find_metric_value(data_df, kpi_config['numerator'], None, variation_col, debug)
+                    num_v = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug)
                     
                     # denominator가 있으면 rate 계산, 없으면 값만 사용
                     if den_label and den_label.strip():
-                        den_v = find_metric_value(data_df, kpi_config['denominator'], None, variation_col, debug)
+                        den_v = get_kpi_metric_value(data_df, kpi_config, 'denominator', variation_col, debug)
                     else:
                         den_v = None
                     
@@ -959,9 +1028,20 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'variations': variation_data,
                     })
             elif kpi_config['type'] == 'revenue':
-                rev_c = find_metric_value(data_df, kpi_config.get('numerator', 'Revenue'), None, control_col, debug)
+                # Revenue 타입은 엑셀의 금액을 현지통화로 보고, 입력 환율로 USD 환산하여 표시합니다.
+                # 가정: 입력 환율(exchangeRate) = 현지통화 1 USD = exchangeRate
+                # => USD = 현지통화 / exchangeRate
+                exchange_rate_raw = kpi_config.get('exchangeRate', None)
+                try:
+                    exchange_rate = float(exchange_rate_raw) if exchange_rate_raw not in [None, ''] else 0.0
+                except Exception:
+                    exchange_rate = 0.0
+                if exchange_rate <= 0:
+                    exchange_rate = 1.0
+
+                rev_c_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', control_col, debug, fallback_label='Revenue')
                 
-                if rev_c is None:
+                if rev_c_local is None:
                     # 메트릭을 찾지 못한 경우 정보 저장
                     missing_metrics.append({
                         'metric': kpi_config.get('numerator', 'Revenue'),
@@ -970,25 +1050,33 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'reportOrder': report_order
                     })
                     continue
+
+                rev_c_local = rev_c_local or 0.0
+                rev_c_usd = rev_c_local / exchange_rate
                 
                 variation_data = []
+                control_usd = rev_c_usd
                 for var_info in variations:
                     variation_col = var_info['variation_col']
-                    rev_v = find_metric_value(data_df, kpi_config.get('numerator', 'Revenue'), None, variation_col, debug)
+                    rev_v_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug, fallback_label='Revenue')
                     
-                    if rev_v is None:
+                    if rev_v_local is None:
                         continue
                     
-                    uplift = ((rev_v - rev_c) / rev_c * 100) if rev_c > 0 else 0
-                    verdict = compute_verdict(uplift, rev_c, rev_v, confidence=None)
+                    rev_v_local = rev_v_local or 0.0
+                    uplift = ((rev_v_local - rev_c_local) / rev_c_local * 100) if rev_c_local > 0 else 0
+
+                    # verdict는 현지통화 기준의 '모수 부족' 판정(기존 로직)을 유지합니다.
+                    verdict = compute_verdict(uplift, rev_c_local, rev_v_local, confidence=None)
+                    rev_v_usd = rev_v_local / exchange_rate
                     
                     variation_data.append({
                         'variationNum': var_info['variation_num'],
-                        'variationValue': rev_v,
+                        'variationValue': rev_v_usd,
                         'uplift': uplift,
                         'confidence': None,
                         'verdict': verdict,
-                        'controlValue': rev_c,
+                        'controlValue': control_usd,
                     })
                 
                 if variation_data:
@@ -999,8 +1087,10 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'category': kpi_config.get('category', 'primary'),
                         'numerator': kpi_config.get('numerator', ''),
                         'denominator': kpi_config.get('denominator', ''),
-                        'controlValue': rev_c,
+                        'controlValue': rev_c_usd,
                         'variations': variation_data,
+                        'kpiType': kpi_config['type'],
+                        'exchangeRate': exchange_rate,
                     })
             elif kpi_config['type'] == 'variation_only':
                 # Variation Only: Variation 값만 계산, uplift 계산 안 함
@@ -1012,7 +1102,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     variation_col = var_info['variation_col']
                     variation_num = var_info['variation_num']
                     
-                    val_v = find_metric_value(data_df, metric_label, None, variation_col, debug)
+                    val_v = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug)
                     
                     if val_v is None:
                         continue
@@ -1021,7 +1111,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     rate_v = None
                     den_v = None
                     if den_label and den_label.strip():
-                        den_v = find_metric_value(data_df, den_label, None, variation_col, debug)
+                        den_v = get_kpi_metric_value(data_df, kpi_config, 'denominator', variation_col, debug)
                         if den_v is not None and den_v > 0:
                             rate_v = val_v / den_v
                     
@@ -1126,6 +1216,93 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                         'decision': None,
                         'variations': variation_data,
                     })
+            elif kpi_config['type'] == 'aop':
+                # AOP: Average Order Price
+                # - numerator: Revenue(현지통화) 금액 (USD 환산은 표시용)
+                # - denominator: 주문 수(Order count 등)
+                metric_label = kpi_config.get('numerator', 'Revenue')
+                den_label = kpi_config.get('denominator', '')
+
+                exchange_rate_raw = kpi_config.get('exchangeRate', None)
+                try:
+                    exchange_rate = float(exchange_rate_raw) if exchange_rate_raw not in [None, ''] else 0.0
+                except Exception:
+                    exchange_rate = 0.0
+                if exchange_rate <= 0:
+                    exchange_rate = 1.0
+
+                if not den_label or not str(den_label).strip():
+                    continue
+
+                rev_c_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', control_col, debug, fallback_label='Revenue')
+                den_c = get_kpi_metric_value(data_df, kpi_config, 'denominator', control_col, debug)
+                if rev_c_local is None or den_c is None:
+                    continue
+
+                rev_c_local = rev_c_local or 0.0
+                den_c = den_c or 0.0
+                aop_c_local = rev_c_local / den_c if den_c > 0 else 0.0
+                aop_c_usd = aop_c_local / exchange_rate
+
+                variation_data = []
+                for var_info in variations:
+                    variation_col = var_info['variation_col']
+                    variation_num = var_info['variation_num']
+
+                    rev_v_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug, fallback_label='Revenue')
+                    den_v = get_kpi_metric_value(data_df, kpi_config, 'denominator', variation_col, debug)
+                    if rev_v_local is None or den_v is None:
+                        continue
+
+                    rev_v_local = rev_v_local or 0.0
+                    den_v = den_v or 0.0
+                    aop_v_local = rev_v_local / den_v if den_v > 0 else 0.0
+                    aop_v_usd = aop_v_local / exchange_rate
+
+                    uplift = ((aop_v_local - aop_c_local) / aop_c_local * 100) if aop_c_local > 0 else 0
+
+                    # 통계(신뢰도/판정)는 RPV처럼 "Revenue/Denominator 비율"을 rate로 보고 계산
+                    _, confidence = compute_confidence_rate(rev_c_local, den_c, rev_v_local, den_v)
+                    verdict = compute_verdict(uplift, den_c, den_v, confidence=confidence)
+
+                    variation_data.append({
+                        'variationNum': variation_num,
+                        'variationRate': aop_v_usd,   # 화면에 표시되는 USD AOP
+                        'variationValue': den_v,      # 모수 부족 계산용 sample size
+                        'uplift': uplift,
+                        'confidence': confidence,
+                        'verdict': verdict,
+                        'p_gt0': None,
+                        'p_lt0': None,
+                        'p_gt3': None,
+                        'p_lt3': None,
+                        'p_neutral': None,
+                        'decision': None,
+                        'controlValue': den_c,
+                        'denominatorSizeVariation': den_v,
+                    })
+
+                if variation_data:
+                    results.append({
+                        'country': country or 'N/A',
+                        'device': base_segment_name,
+                        'kpiName': kpi_config['name'],
+                        'category': kpi_config.get('category', 'primary'),
+                        'numerator': kpi_config.get('numerator', ''),
+                        'denominator': kpi_config.get('denominator', ''),
+                        'controlRate': aop_c_usd,
+                        'controlValue': den_c,  # 모수 부족 계산용 sample size
+                        'p_gt0': None,
+                        'p_lt0': None,
+                        'p_gt3': None,
+                        'p_lt3': None,
+                        'p_neutral': None,
+                        'decision': None,
+                        'variations': variation_data,
+                        'kpiType': kpi_config['type'],
+                        'exchangeRate': exchange_rate,
+                        'denominatorSizeControl': den_c,
+                    })
     else:
         # 기존 로직: variation_count = 1
         for seg_info in segments:
@@ -1143,14 +1320,14 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 # Rate KPI: numerator / denominator
                 # Simple 타입도 rate와 동일하게 처리 (denominator는 선택사항)
                 # country 파라미터는 실제로 사용되지 않음 (새 구조에서는 국가 컬럼 없음)
-                num_c = find_metric_value(data_df, kpi_config['numerator'], None, control_col, debug)
-                num_v = find_metric_value(data_df, kpi_config['numerator'], None, variation_col, debug)
+                num_c = get_kpi_metric_value(data_df, kpi_config, 'numerator', control_col, debug)
+                num_v = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug)
                 
                 # denominator가 있으면 rate 계산, 없으면 값만 사용
                 den_label = kpi_config.get('denominator', '')
                 if den_label and den_label.strip():
-                    den_c = find_metric_value(data_df, kpi_config['denominator'], None, control_col, debug)
-                    den_v = find_metric_value(data_df, kpi_config['denominator'], None, variation_col, debug)
+                    den_c = get_kpi_metric_value(data_df, kpi_config, 'denominator', control_col, debug)
+                    den_v = get_kpi_metric_value(data_df, kpi_config, 'denominator', variation_col, debug)
                 else:
                     den_c = None
                     den_v = None
@@ -1193,7 +1370,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     continue
             
             # 디버그: 실제 값 출력
-            if debug:
+            if debug and (kpi_config['type'] == 'rate' or kpi_config['type'] == 'simple'):
                 print(f"DEBUG: KPI 계산 - {kpi_config['name']}, segment: {segment_name}")
                 print(f"  numerator: {kpi_config['numerator']}, denominator: {kpi_config.get('denominator', '')}")
                 print(f"  num_c: {num_c}, num_v: {num_v}, den_c: {den_c}, den_v: {den_v}")
@@ -1249,7 +1426,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 den_label = kpi_config.get('denominator', '')
                 
                 # Variation 값만 추출
-                val_v = find_metric_value(data_df, metric_label, None, variation_col, debug)
+                val_v = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug)
                 
                 if val_v is None:
                     if debug:
@@ -1266,7 +1443,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                 rate_v = None
                 den_v = None
                 if den_label and den_label.strip():
-                    den_v = find_metric_value(data_df, den_label, None, variation_col, debug)
+                    den_v = get_kpi_metric_value(data_df, kpi_config, 'denominator', variation_col, debug)
                     if den_v is not None and den_v > 0:
                         rate_v = val_v / den_v
                 
@@ -1299,14 +1476,25 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
             elif kpi_config['type'] == 'revenue':
                 # Revenue: numerator 값 사용
                 metric_label = kpi_config.get('numerator', 'Revenue')
-                rev_c = find_metric_value(data_df, metric_label, None, control_col, debug)
-                rev_v = find_metric_value(data_df, metric_label, None, variation_col, debug)
+
+                # 가정: 입력 환율(exchangeRate) = 현지통화 1 USD = exchangeRate
+                # => USD = 현지통화 / exchangeRate
+                exchange_rate_raw = kpi_config.get('exchangeRate', None)
+                try:
+                    exchange_rate = float(exchange_rate_raw) if exchange_rate_raw not in [None, ''] else 0.0
+                except Exception:
+                    exchange_rate = 0.0
+                if exchange_rate <= 0:
+                    exchange_rate = 1.0
+
+                rev_c_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', control_col, debug, fallback_label='Revenue')
+                rev_v_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug, fallback_label='Revenue')
                 
-                if rev_c is None or rev_v is None:
+                if rev_c_local is None or rev_v_local is None:
                     if debug:
                         print(f"DEBUG: Revenue KPI 계산 실패 - {kpi_config['name']}, segment: {segment_name}")
                         # 메트릭을 찾지 못한 경우 정보 저장
-                        if rev_c is None or rev_v is None:
+                        if rev_c_local is None or rev_v_local is None:
                             missing_metrics.append({
                                 'metric': metric_label,
                                 'segment': display_segment_name,
@@ -1315,16 +1503,18 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                             })
                     continue
                 
-                uplift = ((rev_v - rev_c) / rev_c * 100) if rev_c > 0 else 0
+                rev_c_local = rev_c_local or 0.0
+                rev_v_local = rev_v_local or 0.0
+                uplift = ((rev_v_local - rev_c_local) / rev_c_local * 100) if rev_c_local > 0 else 0
                 
                 # Revenue는 variance 데이터가 없으므로 confidence 계산 불가
                 # 샘플 크기는 Revenue 값 자체(분자)를 기준으로 판단
-                rev_c = rev_c or 0
-                rev_v = rev_v or 0
+                rev_c_usd = rev_c_local / exchange_rate
+                rev_v_usd = rev_v_local / exchange_rate
                 
                 # Revenue는 confidence가 없으므로 None 전달
                 # 샘플 크기는 Revenue 값(분자) 기준
-                verdict = compute_verdict(uplift, rev_c, rev_v, confidence=None)
+                verdict = compute_verdict(uplift, rev_c_local, rev_v_local, confidence=None)
                 
                 results.append({
                     'country': country or 'N/A',  # 국가 정보가 없을 수 있음
@@ -1333,8 +1523,8 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'category': kpi_config.get('category', 'primary'),
                     'numerator': kpi_config.get('numerator', ''),
                     'denominator': kpi_config.get('denominator', ''),
-                    'controlValue': rev_c,
-                    'variationValue': rev_v,
+                    'controlValue': rev_c_usd,
+                    'variationValue': rev_v_usd,
                     'controlRate': None,
                     'variationRate': None,
                     'uplift': uplift,
@@ -1346,9 +1536,81 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
                     'p_lt3': None,
                     'p_neutral': None,
                     'decision': None,
-                    'denominatorSize': rev_c + rev_v,  # Revenue는 값 자체가 샘플 크기
-                    'denominatorSizeControl': rev_c,
-                    'denominatorSizeVariation': rev_v,
+                    'denominatorSize': rev_c_usd + rev_v_usd,  # 표시용 USD 값 기준
+                    'denominatorSizeControl': rev_c_usd,
+                    'denominatorSizeVariation': rev_v_usd,
+                    'kpiType': kpi_config['type'],
+                    'exchangeRate': exchange_rate,
+                })
+            
+            elif kpi_config['type'] == 'aop':
+                # AOP: Average Order Price
+                # - 입력 환율로 Revenue(현지통화)를 USD로 변환해서 표시합니다.
+                # - 신뢰도/판정은 기존 RPV처럼 (환율로 스케일하기 전) revenue/local 값을 사용합니다.
+                metric_label = kpi_config.get('numerator', 'Revenue')
+                den_label = kpi_config.get('denominator', '')
+
+                exchange_rate_raw = kpi_config.get('exchangeRate', None)
+                try:
+                    exchange_rate = float(exchange_rate_raw) if exchange_rate_raw not in [None, ''] else 0.0
+                except Exception:
+                    exchange_rate = 0.0
+                if exchange_rate <= 0:
+                    exchange_rate = 1.0
+
+                if not den_label or not str(den_label).strip():
+                    continue
+
+                rev_c_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', control_col, debug, fallback_label='Revenue')
+                rev_v_local = get_kpi_metric_value(data_df, kpi_config, 'numerator', variation_col, debug, fallback_label='Revenue')
+                den_c = get_kpi_metric_value(data_df, kpi_config, 'denominator', control_col, debug)
+                den_v = get_kpi_metric_value(data_df, kpi_config, 'denominator', variation_col, debug)
+
+                if rev_c_local is None or rev_v_local is None or den_c is None or den_v is None:
+                    continue
+
+                rev_c_local = rev_c_local or 0.0
+                rev_v_local = rev_v_local or 0.0
+                den_c = den_c or 0.0
+                den_v = den_v or 0.0
+
+                aop_c_local = rev_c_local / den_c if den_c > 0 else 0.0
+                aop_v_local = rev_v_local / den_v if den_v > 0 else 0.0
+
+                aop_c_usd = aop_c_local / exchange_rate
+                aop_v_usd = aop_v_local / exchange_rate
+
+                uplift = ((aop_v_local - aop_c_local) / aop_c_local * 100) if aop_c_local > 0 else 0
+
+                # Confidence/판정은 local 값 기준
+                _, confidence = compute_confidence_rate(rev_c_local, den_c, rev_v_local, den_v)
+                verdict = compute_verdict(uplift, den_c, den_v, confidence=confidence)
+
+                results.append({
+                    'country': country or 'N/A',
+                    'device': display_segment_name or 'All',
+                    'kpiName': kpi_config['name'],
+                    'category': kpi_config.get('category', 'primary'),
+                    'numerator': kpi_config.get('numerator', ''),
+                    'denominator': kpi_config.get('denominator', ''),
+                    'controlValue': den_c,        # 모수부족 계산용 sample size
+                    'variationValue': den_v,
+                    'controlRate': aop_c_usd,     # 화면에 표시되는 USD AOP
+                    'variationRate': aop_v_usd,
+                    'uplift': uplift,
+                    'confidence': confidence,
+                    'verdict': verdict,
+                    'p_gt0': None,
+                    'p_lt0': None,
+                    'p_gt3': None,
+                    'p_lt3': None,
+                    'p_neutral': None,
+                    'decision': None,
+                    'denominatorSize': den_c + den_v,
+                    'denominatorSizeControl': den_c,
+                    'denominatorSizeVariation': den_v,
+                    'kpiType': kpi_config['type'],
+                    'exchangeRate': exchange_rate,
                 })
             
             elif kpi_config['type'] == 'rpv':

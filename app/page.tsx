@@ -20,6 +20,11 @@ export default function Home() {
   const [variationCount, setVariationCount] = useState<number>(1)
   const [segments, setSegments] = useState<string[]>(['All Visits'])
   const [useAI, setUseAI] = useState<boolean>(false)
+  // 우측 데이터 미리보기에서 선택한 "A열 메트릭 라벨"을 KPI의 numerator/denominator에 반영하기 위한 현재 입력 위치
+  const [activeKpiInput, setActiveKpiInput] = useState<{ index: number; field: 'numerator' | 'denominator' }>({
+    index: 0,
+    field: 'numerator',
+  })
   const [savedSummary, setSavedSummary] = useState<{
     testTitle: string
     abTestSummary: string
@@ -28,7 +33,7 @@ export default function Home() {
   const [summaryResetToken, setSummaryResetToken] = useState<number>(0)
 
   // Custom Hooks
-  const { config, addKPI, removeKPI, updateKPI } = useKPIConfig()
+  const { config, addKPI, removeKPI, updateKPI, setKPIRowSelection } = useKPIConfig()
   const { 
     files, 
     pendingFiles, 
@@ -68,6 +73,18 @@ export default function Home() {
   // 분석 시작 핸들러
   const handleAnalyze = () => {
     performAnalysis(files, config, variationCount, segments, useAI)
+  }
+
+  const handleMetricRowSelect = (metricLabel: string, rowData: Record<string, any>) => {
+    const { index, field } = activeKpiInput || { index: 0, field: 'numerator' }
+    const kpi = config.kpis[index]
+    if (!kpi) return
+
+    // Revenue는 denominator 입력을 숨기므로, 행 선택 시에도 numerator로 반영
+    const safeField = kpi.type === 'revenue' ? 'numerator' : field
+
+    // 라벨 + 선택된 행 전체 데이터를 함께 저장 → 분석 시 정확히 이 행의 값이 사용됨
+    setKPIRowSelection(index, safeField, metricLabel, rowData)
   }
 
   return (
@@ -133,6 +150,8 @@ export default function Home() {
                   onKPIAdd={addKPI}
                   onKPIRemove={removeKPI}
                   onUseAIToggle={setUseAI}
+                  activeKpiInput={activeKpiInput}
+                  onKpiInputFocus={(index, field) => setActiveKpiInput({ index, field })}
                   onPrevious={() => setCurrentStep(2)}
                   onAnalyze={() => {
                     setCurrentStep(4)
@@ -405,6 +424,19 @@ export default function Home() {
                 previewData={previewData}
                 previewHeaders={previewHeaders}
                 onFileClick={handleFileClick}
+                onRowSelect={currentStep === 3 ? handleMetricRowSelect : undefined}
+                activeKpiTarget={
+                  currentStep === 3 && config.kpis[activeKpiInput.index]
+                    ? {
+                        kpiIndex: activeKpiInput.index,
+                        kpiName: config.kpis[activeKpiInput.index].name || '',
+                        field:
+                          config.kpis[activeKpiInput.index].type === 'revenue'
+                            ? 'numerator'
+                            : activeKpiInput.field,
+                      }
+                    : undefined
+                }
               />
             )}
           </div>
