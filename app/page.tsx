@@ -97,7 +97,7 @@ export default function Home() {
         style={{ width: `${sidebarWidth}px`, minWidth: '250px', maxWidth: '70vw' }}
       >
           <div className="sidebar-content">
-            <h1 className="app-title">A/B 테스트 리포트 생성기</h1>
+            <h1 className="app-title">📊 A/B 테스트 리포트 생성기</h1>
 
             {/* 1단계: 파일 업로드 */}
             {currentStep === 1 && (
