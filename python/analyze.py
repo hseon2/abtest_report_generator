@@ -22,6 +22,10 @@ if sys.platform == 'win32':
         pass  # 이미 설정되어 있으면 무시
 
 
+# B열(인덱스 1) 이후부터 Control/Variation 세그먼트 컬럼을 동적으로 탐색
+SEGMENT_SCAN_START_COL_IDX = 1  # B열 (0-based index)
+
+
 def report_progress(pct: int, message: str = ""):
     """서버 스트리밍용 진행률 출력. Node에서 [PROGRESS]N 패턴으로 파싱."""
     if message:
@@ -132,14 +136,8 @@ def find_segments_row(df):
 def parse_excel(file_path):
     """
     Excel 또는 CSV 파일 파싱
-    실제 구조:
-    - A열: 세그먼트 이름 (메트릭 이름)
-    - B열: All Visits - Control
-    - C열: All Visits - Variation
-    - D열: 세그먼트 1 - Control
-    - E열: 세그먼트 1 - Variation
-    - F열: 세그먼트 2 - Control
-    - G열: 세그먼트 2 - Variation
+    - A열: 메트릭 이름
+    - B열 이후: 세그먼트 Control/Variation 컬럼 (위치는 파일마다 다를 수 있음, 헤더에서 동적 감지)
     """
     file_path_obj = Path(file_path)
     file_ext = file_path_obj.suffix.lower()
@@ -170,64 +168,8 @@ def parse_excel(file_path):
     if segments_row is None:
         raise ValueError("'Segments' 행을 찾을 수 없습니다. 파일 형식을 확인해주세요.")
     
-    # Segments 행의 헤더 읽기
-    segments_header_row = df.iloc[segments_row]
-    segment_names = {}
-    
-    # 세그먼트 이름은 Segments 행의 위 위 행 (segments_row - 2)에서 추출
-    # Segments 행 위 위 행에 세그먼트 이름이 있다고 가정
-    segment_name_row_idx = segments_row - 2
-    if segment_name_row_idx >= 0:
-        segment_name_row = df.iloc[segment_name_row_idx]
-        
-        # B-C는 All (첫 번째 세그먼트)
-        # 세그먼트 이름 행의 C 컬럼(인덱스 2)에서 세그먼트 이름 추출
-        if pd.notna(segment_name_row.iloc[2]):  # C 컬럼 (인덱스 2)
-            segment_name_bc = str(segment_name_row.iloc[2]).strip()
-            segment_names['B'] = segment_name_bc if segment_name_bc else 'All'
-            segment_names['C'] = segment_name_bc if segment_name_bc else 'All'
-        else:
-            segment_names['B'] = 'All'
-            segment_names['C'] = 'All'
-        
-        # D부터는 세그먼트 이름 행의 해당 컬럼에서 추출
-        # 컬럼 매핑: 인덱스 0=A, 1=B, 2=C, 3=D, 4=E, 5=F, 6=G, 7=H, 8=I, ...
-        col_letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T']
-        col_idx = 3  # D는 인덱스 3부터 시작
-        
-        segment_count = 0
-        while col_idx + 1 < len(segment_name_row) and segment_count < 15:  # 최대 15개 세그먼트까지 처리
-            control_col_idx = col_idx
-            variation_col_idx = col_idx + 1
-            
-            # 세그먼트 이름 행에서 세그먼트 이름 읽기
-            control_segment_name = segment_name_row.iloc[control_col_idx] if control_col_idx < len(segment_name_row) else None
-            variation_segment_name = segment_name_row.iloc[variation_col_idx] if variation_col_idx < len(segment_name_row) else None
-            
-            if pd.notna(control_segment_name) or pd.notna(variation_segment_name):
-                segment_name_val = str(control_segment_name if pd.notna(control_segment_name) else variation_segment_name).strip()
-                
-                # "- Control", "- Variation" 같은 접미사 제거
-                segment_name_val = segment_name_val.replace('- Control', '').replace('- Variation', '').replace('Control', '').replace('Variation', '').strip()
-                
-                if segment_name_val and segment_name_val.lower() not in ['nan', 'none', '']:
-                    # 컬럼 문자 직접 계산 (col_idx가 3이면 D, 4면 E)
-                    if col_idx < len(col_letters):
-                        control_col = col_letters[col_idx]
-                        if col_idx + 1 < len(col_letters):
-                            variation_col = col_letters[col_idx + 1]
-                            
-                            segment_names[control_col] = segment_name_val
-                            segment_names[variation_col] = segment_name_val
-                            segment_count += 1
-                            
-                            print(f"DEBUG: 세그먼트 감지 - 이름: {segment_name_val}, 컬럼: {control_col}-{variation_col}, 인덱스: {col_idx}-{col_idx+1}")
-            
-            col_idx += 2  # 다음 Control/Variation 쌍으로 이동 (D-E -> F-G -> H-I ...)
-    else:
-        # 기본값
-        segment_names['B'] = 'All'
-        segment_names['C'] = 'All'
+    # B열 이후 헤더를 스캔하여 세그먼트 컬럼 위치를 동적으로 감지
+    segment_names = scan_segment_columns_from_excel(df, segments_row)
     
     # B열에서 국가 코드 감지
     countries_from_b = detect_countries_from_b_column(df, segments_row)
@@ -455,140 +397,324 @@ def detect_country_from_excel(df, segments_row):
     
     return 'UK'  # 기본값
 
-def detect_segments_from_user_input(user_segments, variation_count=1):
+
+def col_index_to_letter(col_idx):
+    """0-based 컬럼 인덱스를 Excel 컬럼 문자로 변환 (0=A, 1=B, ...)"""
+    if col_idx < 26:
+        return chr(65 + col_idx)
+    first = (col_idx - 26) // 26
+    second = (col_idx - 26) % 26
+    return chr(65 + first) + chr(65 + second)
+
+
+def extract_segment_name_from_header(cell_value):
+    """헤더 셀에서 세그먼트 이름 추출 (Control/Variation 접미사 제거)"""
+    if pd.isna(cell_value):
+        return ''
+    import re
+    text = str(cell_value).strip()
+    if not text or text.lower() in ['nan', 'none', '']:
+        return ''
+    for token in ['- Control', '- Variation', '- control', '- variation']:
+        text = text.replace(token, '')
+    text = re.sub(r'\bControl\b', '', text, flags=re.I)
+    text = re.sub(r'\bVariation\s*\d*\b', '', text, flags=re.I)
+    return text.strip()
+
+
+def _header_cell_texts(header_rows, col_idx):
+    """여러 헤더 행에서 해당 컬럼의 텍스트 목록 반환"""
+    texts = []
+    for row in header_rows:
+        if col_idx < len(row) and pd.notna(row.iloc[col_idx]):
+            text = str(row.iloc[col_idx]).strip()
+            if text and text.lower() not in ['nan', 'none']:
+                texts.append(text)
+    return texts
+
+
+def _is_control_header(texts):
+    return any('control' in t.lower() for t in texts)
+
+
+def _is_variation_header(texts):
+    return any('variation' in t.lower() for t in texts)
+
+
+def _looks_like_numeric_data_column(df, segments_row, col_idx, sample_rows=8):
+    """Segments 행 이후 샘플 데이터가 숫자형인지 확인"""
+    data_start = segments_row + 1
+    total = 0
+    numeric = 0
+    for idx in range(data_start, min(data_start + sample_rows, len(df))):
+        if col_idx >= len(df.columns):
+            break
+        val = df.iloc[idx, col_idx]
+        if pd.isna(val):
+            continue
+        total += 1
+        try:
+            float(str(val).replace(',', '').replace(' ', '').strip())
+            numeric += 1
+        except (ValueError, TypeError):
+            pass
+    return total > 0 and numeric / total >= 0.5
+
+
+def segment_names_exact_match(user_name, detected_name):
+    """사용자 입력 세그먼트와 Excel 감지 세그먼트 이름 정확 일치 비교 (대소문자·공백·특수문자만 무시)"""
+    u = clean_label(user_name).lower()
+    d = clean_label(detected_name).lower()
+    return bool(u and d and u == d)
+
+
+def scan_segment_columns_from_excel(df, segments_row, variation_count=1):
     """
-    사용자가 입력한 세그먼트 목록으로 컬럼 매핑 생성
-    user_segments: ['All Visits', 'PC', 'MO', ...] 형식
-    variation_count: Variation 개수 (기본값: 1)
-    
-    variation_count가 1보다 크면:
-    - 각 세그먼트마다 Control + Variation들 구조
-    - 예: All Visits -> B(Control), C(Var1), D(Var2)
-    - 예: PC -> E(Control), F(Var1), G(Var2)
-    
-    반환 형식: [(segment_name, control_col, variation_col), ...]
-    variation_count > 1인 경우: (variation_name, control_col, variation_col, actual_segment_name) 형식
+    B열 이후 헤더를 스캔하여 세그먼트별 Control/Variation 컬럼 위치를 동적으로 감지.
+    반환: {'D': 'All Visits', 'E': 'All Visits', 'F': 'MO Device', ...}
     """
+    segment_names = {}
+    header_rows = []
+    for offset in [-2, -1, 0]:
+        row_idx = segments_row + offset
+        if row_idx >= 0:
+            header_rows.append(df.iloc[row_idx])
+    if not header_rows:
+        return segment_names
+
+    max_cols = max(len(row) for row in header_rows)
+    col_idx = SEGMENT_SCAN_START_COL_IDX
+    group_size = 1 + variation_count
+
+    while col_idx + variation_count < max_cols:
+        control_texts = _header_cell_texts(header_rows, col_idx)
+        variation_texts = _header_cell_texts(header_rows, col_idx + 1) if variation_count == 1 else []
+        seg_name = None
+        matched = False
+
+        # 패턴 1: Control / Variation 키워드가 명시된 컬럼 쌍
+        if variation_count == 1 and _is_control_header(control_texts) and _is_variation_header(variation_texts):
+            seg_name = (
+                extract_segment_name_from_header(control_texts[0] if control_texts else '')
+                or extract_segment_name_from_header(variation_texts[0] if variation_texts else '')
+            )
+            matched = True
+
+        # 패턴 2: 인접 컬럼에 동일한 세그먼트 이름 (Control/Variation 키워드 없는 순수 라벨 쌍)
+        if not matched and variation_count == 1:
+            n1 = extract_segment_name_from_header(control_texts[0] if control_texts else '')
+            n2 = extract_segment_name_from_header(variation_texts[0] if variation_texts else '')
+            neither_cv = (
+                not _is_control_header(control_texts) and not _is_variation_header(control_texts)
+                and not _is_control_header(variation_texts) and not _is_variation_header(variation_texts)
+            )
+            if n1 and n2 and segment_names_exact_match(n1, n2) and neither_cv:
+                seg_name = n1
+                matched = True
+
+        # 패턴 3: 왼쪽 열에 세그먼트 라벨, 현재 열부터 Control/Variation 데이터
+        if not matched and variation_count == 1 and col_idx > SEGMENT_SCAN_START_COL_IDX:
+            label_texts = _header_cell_texts(header_rows, col_idx - 1)
+            label_name = extract_segment_name_from_header(label_texts[0] if label_texts else '')
+            label_is_plain = not _is_control_header(label_texts) and not _is_variation_header(label_texts)
+            has_cv_marker = _is_control_header(control_texts) or _is_variation_header(variation_texts)
+            has_numeric_pair = (
+                _looks_like_numeric_data_column(df, segments_row, col_idx)
+                and _looks_like_numeric_data_column(df, segments_row, col_idx + 1)
+            )
+            if label_name and label_is_plain and (has_cv_marker or has_numeric_pair):
+                seg_name = label_name
+                matched = True
+
+        # 패턴 4: variation_count > 1 — Control 열 + 연속 Variation 열
+        if not matched and variation_count > 1 and _is_control_header(control_texts):
+            seg_name = extract_segment_name_from_header(control_texts[0] if control_texts else '')
+            var_headers_ok = all(
+                _is_variation_header(_header_cell_texts(header_rows, col_idx + vi))
+                for vi in range(1, variation_count + 1)
+            )
+            if seg_name and var_headers_ok:
+                matched = True
+
+        # 패턴 5: 헤더 없이 숫자 데이터만 있는 연속 컬럼 (메타데이터 열 제외)
+        if not matched and variation_count == 1:
+            if (
+                _looks_like_numeric_data_column(df, segments_row, col_idx)
+                and _looks_like_numeric_data_column(df, segments_row, col_idx + 1)
+            ):
+                seg_name = (
+                    extract_segment_name_from_header(control_texts[0] if control_texts else '')
+                    or extract_segment_name_from_header(variation_texts[0] if variation_texts else '')
+                    or f'Segment {len(segment_names) // 2 + 1}'
+                )
+                matched = True
+
+        if matched and seg_name:
+            control_letter = col_index_to_letter(col_idx)
+            segment_names[control_letter] = seg_name
+            for vi in range(1, variation_count + 1):
+                var_letter = col_index_to_letter(col_idx + vi)
+                segment_names[var_letter] = seg_name
+            print(
+                f"DEBUG: 세그먼트 동적 감지 - 이름: {seg_name}, "
+                f"컬럼: {control_letter}-{col_index_to_letter(col_idx + variation_count)}, "
+                f"인덱스: {col_idx}-{col_idx + variation_count}"
+            )
+            col_idx += group_size
+        else:
+            col_idx += 1
+
+    return segment_names
+
+
+def build_segment_pairs_from_names(segment_names, variation_count=1):
+    """
+    segment_names dict를 세그먼트 쌍/그룹 리스트로 변환.
+    variation_count=1: [(name, control_col, variation_col), ...]
+    variation_count>1: [(name, control_col, [var_cols]), ...]
+    """
+    if not segment_names:
+        return []
+
+    col_order = sorted(
+        segment_names.keys(),
+        key=lambda c: sum((ord(ch) - 64) * (26 ** i) for i, ch in enumerate(reversed(c)))
+    )
+
+    pairs = []
+    i = 0
+    while i < len(col_order):
+        col = col_order[i]
+        name = segment_names[col]
+        group = [col]
+        j = i + 1
+        while j < len(col_order) and segment_names.get(col_order[j]) == name:
+            group.append(col_order[j])
+            j += 1
+
+        if variation_count == 1 and len(group) >= 2:
+            pairs.append((name, group[0], group[1]))
+        elif variation_count > 1 and len(group) >= 2:
+            pairs.append((name, group[0], group[1:]))
+        i = j if j > i + 1 else i + 1
+
+    return pairs
+
+
+def match_user_segments_to_excel(user_segments, segment_names, variation_count=1):
+    """
+    사용자 입력 세그먼트를 Excel에서 감지된 컬럼 위치와 이름 매칭.
+    Excel 헤더 탐색 결과가 없으면 빈 리스트 반환.
+    """
+    detected_pairs = build_segment_pairs_from_names(segment_names, variation_count)
+    if not detected_pairs:
+        return []
+
     segments = []
-    all_cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T']
-    
-    col_idx = 1  # B열부터 시작
-    
-    print(f"DEBUG detect_segments_from_user_input: 입력받은 세그먼트 목록: {user_segments}")
+    used_indices = set()
+
+    print(f"DEBUG match_user_segments_to_excel: Excel 감지 세그먼트: {detected_pairs}")
+
+    for user_seg in user_segments:
+        if not user_seg or str(user_seg).strip() == '':
+            continue
+        user_seg = str(user_seg).strip()
+        best_idx = None
+        for idx, detected in enumerate(detected_pairs):
+            if idx in used_indices:
+                continue
+            detected_name = detected[0]
+            if segment_names_exact_match(user_seg, detected_name):
+                best_idx = idx
+                break
+
+        if best_idx is None:
+            print(f"경고: Excel에서 세그먼트 '{user_seg}'에 해당하는 컬럼을 찾지 못했습니다.")
+            continue
+
+        used_indices.add(best_idx)
+        detected = detected_pairs[best_idx]
+
+        if variation_count > 1:
+            control_col = detected[1]
+            var_cols = detected[2]
+            for var_idx, var_col in enumerate(var_cols, start=1):
+                segments.append((f'Variation {var_idx}', control_col, var_col, user_seg))
+                print(f"DEBUG: '{user_seg}' -> Variation {var_idx} (Control: {control_col}, Variation: {var_col})")
+        else:
+            control_col, variation_col = detected[1], detected[2]
+            segments.append((user_seg, control_col, variation_col))
+            print(f"DEBUG: '{user_seg}' -> (Control: {control_col}, Variation: {variation_col})")
+
+    return segments
+
+
+def detect_segments_from_user_input(user_segments, variation_count=1, segment_names=None):
+    """
+    사용자 입력 세그먼트를 Excel 헤더에서 동적으로 찾아 컬럼 매핑 생성.
+    segment_names가 제공되면 Excel 헤더 탐색 결과와 이름 매칭을 우선 사용.
+    매칭 실패 시 B열 이후를 순차 스캔하는 폴백을 사용.
+    """
+    print(f"DEBUG detect_segments_from_user_input: 입력 세그먼트: {user_segments}")
     print(f"DEBUG detect_segments_from_user_input: variation_count: {variation_count}")
-    
+
+    if segment_names:
+        matched = match_user_segments_to_excel(user_segments, segment_names, variation_count)
+        if matched:
+            print(f"DEBUG detect_segments_from_user_input: Excel 헤더 매칭 {len(matched)}개 성공")
+            return matched
+        print("경고: Excel 헤더 매칭 실패, 순차 스캔 폴백 사용")
+
+    # 폴백: B열 이후 순차 배치 (위치 고정 없이 남은 컬럼 순서대로)
+    segments = []
+    all_cols = [col_index_to_letter(i) for i in range(26)]
+    col_idx = SEGMENT_SCAN_START_COL_IDX
+
     for segment_name in user_segments:
         if not segment_name or str(segment_name).strip() == '':
-            print(f"DEBUG: 빈 세그먼트 건너뜀: '{segment_name}'")
             continue
-        
         segment_name = str(segment_name).strip()
-        print(f"DEBUG: 세그먼트 처리 중: '{segment_name}', 현재 col_idx: {col_idx}")
-        
+
         if variation_count > 1:
-            # 여러 Variation인 경우: Control + Variation들
-            control_col = all_cols[col_idx]
-            col_idx += 1
-            
-            # 각 Variation별로 Control과 비교
-            # 실제 세그먼트 이름을 저장하기 위해 4개 요소 튜플 사용
-            for var_idx in range(1, variation_count + 1):
-                if col_idx >= len(all_cols):
-                    print(f"경고: 컬럼 범위를 초과했습니다. 세그먼트 '{segment_name}'의 Variation {var_idx}를 건너뜁니다.")
-                    break
-                variation_col = all_cols[col_idx]
-                variation_name = f'Variation {var_idx}'
-                # (variation_name, control_col, variation_col, actual_segment_name) 형식
-                segments.append((variation_name, control_col, variation_col, segment_name))
-                col_idx += 1
-                print(f"DEBUG detect_segments_from_user_input: {segment_name} - {variation_name} (Control: {control_col}, Variation: {variation_col})")
-        else:
-            # variation_count = 1인 경우: Control-Variation 쌍
-            if col_idx + 1 >= len(all_cols):
-                print(f"경고: 컬럼 범위를 초과했습니다. 세그먼트 '{segment_name}'를 건너뜁니다.")
+            if col_idx >= len(all_cols):
                 break
             control_col = all_cols[col_idx]
-            variation_col = all_cols[col_idx + 1]
-            segments.append((segment_name, control_col, variation_col))
+            col_idx += 1
+            for var_idx in range(1, variation_count + 1):
+                if col_idx >= len(all_cols):
+                    break
+                segments.append((f'Variation {var_idx}', control_col, all_cols[col_idx], segment_name))
+                col_idx += 1
+        else:
+            if col_idx + 1 >= len(all_cols):
+                break
+            segments.append((segment_name, all_cols[col_idx], all_cols[col_idx + 1]))
             col_idx += 2
-            print(f"DEBUG detect_segments_from_user_input: {segment_name} (Control: {control_col}, Variation: {variation_col})")
-    
-    print(f"DEBUG detect_segments_from_user_input: 총 {len(segments)}개 세그먼트 매핑 생성됨")
+
+    print(f"DEBUG detect_segments_from_user_input: 폴백 매핑 {len(segments)}개 생성")
     return segments
 
 def detect_segments(segment_names, variation_count=1):
     """
-    세그먼트 컬럼 매핑을 동적으로 감지
-    segment_names: {'B': 'All', 'C': 'All', 'D': '세그먼트 1', 'E': '세그먼트 1', ...} 형식
-    variation_count: Variation 개수 (기본값: 1)
-    
-    variation_count가 1보다 크면:
-    - B열: Control
-    - C열: Variation 1
-    - D열: Variation 2
-    - ...
-    각 Variation은 Control과 비교
+    Excel 헤더에서 감지된 segment_names를 기반으로 세그먼트 컬럼 매핑 생성.
+    B열 이후 위치는 고정하지 않고 헤더 탐색 결과를 사용.
     """
     segments = []
-    used_cols = set()
-    all_cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T']
-    
+    pairs = build_segment_pairs_from_names(segment_names, variation_count)
+
     if variation_count > 1:
-        # 여러 Variation인 경우: B열이 Control, C부터 Variation들
-        segment_name = segment_names.get('B', 'All') if segment_names else 'All'
-        control_col = 'B'
-        
-        # 각 Variation별로 Control과 비교
-        for var_idx in range(1, variation_count + 1):
-            variation_col_idx = 1 + var_idx  # C=2, D=3, E=4, ...
-            if variation_col_idx < len(all_cols):
-                variation_col = all_cols[variation_col_idx]
-                variation_name = f'Variation {var_idx}'
-                segments.append((variation_name, control_col, variation_col))
-                used_cols.add(control_col)
-                used_cols.add(variation_col)
-                print(f"DEBUG detect_segments: Variation {var_idx} 추가 - {variation_name} (Control: {control_col}, Variation: {variation_col})")
+        for name, control_col, var_cols in pairs:
+            for var_idx, var_col in enumerate(var_cols, start=1):
+                segments.append((f'Variation {var_idx}', control_col, var_col))
+                print(f"DEBUG detect_segments: {name} - Variation {var_idx} ({control_col}-{var_col})")
     else:
-        # 기존 방식: Control-Variation 쌍 (B-C, D-E, F-G, ...)
-        # B-C는 All (segment_names에서 읽은 값 사용)
-        if 'B' in segment_names and 'C' in segment_names:
-            segment_name_bc = segment_names['B'] if segment_names['B'] else 'All'
-            segments.append((segment_name_bc, 'B', 'C'))
-            used_cols.add('B')
-            used_cols.add('C')
-            print(f"DEBUG detect_segments: 첫 번째 세그먼트 추가 - {segment_name_bc} (B-C)")
-        
-        # 나머지는 Control/Variation 쌍으로 처리 (D-E, F-G, H-I, ...)
-        # D부터 시작하여 Control/Variation 쌍 검색
-        for i in range(3, len(all_cols) - 1, 2):  # D=3부터 시작, 2씩 증가 (D-E, F-G, H-I, ...)
-            control_col = all_cols[i]
-            variation_col = all_cols[i + 1]
-            
-            # segment_names에 해당 컬럼이 있는지 확인
-            if control_col in segment_names or variation_col in segment_names:
-                # 세그먼트 이름 추출 (Control 또는 Variation 중 하나라도 있으면 사용)
-                segment_name = None
-                if control_col in segment_names:
-                    segment_name = str(segment_names[control_col]).strip()
-                elif variation_col in segment_names:
-                    segment_name = str(segment_names[variation_col]).strip()
-                
-                if segment_name and segment_name.lower() not in ['nan', 'none', '']:
-                    segments.append((segment_name, control_col, variation_col))
-                    used_cols.add(control_col)
-                    used_cols.add(variation_col)
-                    print(f"DEBUG detect_segments: 세그먼트 추가 - {segment_name} ({control_col}-{variation_col})")
-        
-        # 매칭되지 않은 경우 기본값 사용
-        if not segments:
-            print("경고: 세그먼트를 자동 감지하지 못했습니다. 기본 구조를 사용합니다.")
-            segment_name_bc = segment_names.get('B', 'All') if segment_names else 'All'
-            segments.append((segment_name_bc, 'B', 'C'))
-            if 'D' in segment_names and 'E' in segment_names:
-                segments.append(('세그먼트 1', 'D', 'E'))
-            if 'F' in segment_names and 'G' in segment_names:
-                segments.append(('세그먼트 2', 'F', 'G'))
-    
+        for name, control_col, variation_col in pairs:
+            segments.append((name, control_col, variation_col))
+            print(f"DEBUG detect_segments: 세그먼트 추가 - {name} ({control_col}-{variation_col})")
+
+    if not segments:
+        print("경고: 세그먼트를 자동 감지하지 못했습니다.")
+
     print(f"DEBUG detect_segments: 총 {len(segments)}개 세그먼트 감지됨")
     return segments
 
@@ -746,11 +872,13 @@ def find_metric_value(data_df, metric_label, country, device_col, debug=False):
     device_col: 'B' (All Control), 'C' (All Variation), 'D' (세그먼트1 Control), etc.
     
     Excel 구조:
-    - 컬럼 A: 메트릭 이름 (세그먼트 이름)
-    - 컬럼 B: All Visits - Control
-    - 컬럼 C: All Visits - Variation
-    - 컬럼 D: 세그먼트 1 - Control
-    - 컬럼 E: 세그먼트 1 - Variation
+    - 컬럼 A: 메트릭 이름
+    - 컬럼 B: 메트릭 상세 라벨
+    - 컬럼 C: 국가/세그먼트 라벨
+    - 컬럼 D: All Visits - Control
+    - 컬럼 E: All Visits - Variation
+    - 컬럼 F: 세그먼트 2 - Control
+    - 컬럼 G: 세그먼트 2 - Variation
     - ...
     """
     metric_clean = clean_label(metric_label)
@@ -869,7 +997,7 @@ def compute_kpi(data_df, kpi_config, country='UK', segment_mapping=None, variati
             segments = detect_segments(segment_names, variation_count)
         else:
             segments = [
-                ('All', 'B', 'C'),
+                ('All', 'D', 'E'),
             ]
     
     # variation_count > 1인 경우, segment별로 그룹화
@@ -1692,9 +1820,9 @@ def compute_secondary_kpi(data_df, kpi_label, country='UK', segment_mapping=None
         if segment_names:
             segments = detect_segments(segment_names, variation_count)
         else:
-            # 기본 구조: B-C (All)
+            # 기본 구조: D-E (All)
             segments = [
-                ('All', 'B', 'C'),
+                ('All', 'D', 'E'),
             ]
     
     for seg_info in segments:
@@ -2441,7 +2569,7 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
     # 세그먼트 매핑 생성 (사용자 입력 세그먼트 사용)
     print(f"원본 세그먼트 이름: {segment_names}")
     print(f"Variation 개수: {variation_count}")
-    segment_mapping = detect_segments_from_user_input(user_segments, variation_count)
+    segment_mapping = detect_segments_from_user_input(user_segments, variation_count, segment_names)
     print(f"생성된 세그먼트 매핑: {segment_mapping}")
     print(f"세그먼트 매핑 개수: {len(segment_mapping)}")
     if len(segment_mapping) == 0:
@@ -2454,8 +2582,11 @@ def process_single_file(data_df, segment_names, detected_country, is_multi_count
     
     # 세그먼트가 비어있으면 기본값 사용
     if not segment_mapping:
-        print("경고: 세그먼트 매핑이 비어있습니다. 기본 구조를 사용합니다.")
-        segment_mapping = [('All', 'B', 'C')]
+        print("경고: 세그먼트 매핑이 비어있습니다. Excel 자동 감지 결과를 사용합니다.")
+        segment_mapping = detect_segments(segment_names, variation_count)
+    if not segment_mapping:
+        print("경고: 자동 감지도 실패했습니다. B열부터 순차 폴백을 사용합니다.")
+        segment_mapping = detect_segments_from_user_input(user_segments, variation_count)
     
     # 파싱된 데이터를 Excel로 저장 (분석용)
     tmp_dir = Path(__file__).parent.parent / 'tmp'
